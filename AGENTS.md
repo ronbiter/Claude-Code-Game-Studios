@@ -1,6 +1,6 @@
-# Claude Code Game Studios -- Game Studio Agent Architecture
+# Agent Game Studios -- Game Studio Agent Architecture
 
-Indie game development managed through 48 coordinated Claude Code subagents.
+Indie game development managed through 48 coordinated subagents.
 Each agent owns a specific domain, enforcing separation of concerns and quality.
 
 ## Technology Stack
@@ -43,7 +43,7 @@ Every task follows: **Question -> Options -> Decision -> Draft -> Approval**
 See `docs/COLLABORATIVE-DESIGN-PRINCIPLE.md` for full protocol and examples.
 
 > **First session?** If the project has no engine configured and no game concept,
-> run `/start` to begin the guided onboarding flow.
+> run `/skill name="start"` to begin the guided onboarding flow.
 
 ## Coding Standards
 
