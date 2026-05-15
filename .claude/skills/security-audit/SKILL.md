@@ -3,7 +3,8 @@ name: security-audit
 description: "Audit the game for security vulnerabilities: save tampering, cheat vectors, network exploits, data exposure, and input validation gaps. Produces a prioritised security report with remediation guidance. Run before any public release or multiplayer launch."
 argument-hint: "[full | network | save | input | quick]"
 user-invocable: true
-allowed-tools: Read, Glob, Grep, Bash, Write, task
+allowed-tools: Read, Glob, Grep, Bash, Write, Task
+model: sonnet
 agent: security-engineer
 ---
 
@@ -35,7 +36,7 @@ remediation plan.
 - `quick` — high-severity checks only (fastest, for iterative use)
 - No argument — run `full`
 
-Read `.agents/docs/technical-preferences.md` to determine:
+Read `.claude/docs/technical-preferences.md` to determine:
 - Engine and language (affects which patterns to search for)
 - Target platforms (affects which attack surfaces apply)
 - Whether multiplayer/networking is in scope
@@ -44,7 +45,7 @@ Read `.agents/docs/technical-preferences.md` to determine:
 
 ## Phase 2: Spawn Security Engineer
 
-Spawn `security-engineer` via task. Pass:
+Spawn `security-engineer` via Task. Pass:
 - The audit scope/mode
 - Engine and language from technical preferences
 - A manifest of all source directories: `src/`, `assets/data/`, any config files

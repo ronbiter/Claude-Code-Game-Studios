@@ -3,7 +3,8 @@ name: create-control-manifest
 description: "After architecture is complete, produces a flat actionable rules sheet for programmers — what you must do, what you must never do, per system and per layer. Extracted from all Accepted ADRs, technical preferences, and engine reference docs. More immediately actionable than ADRs (which explain why)."
 argument-hint: "[update — regenerate from current ADRs]"
 user-invocable: true
-allowed-tools: Read, Glob, Grep, Write, task
+allowed-tools: Read, Glob, Grep, Write, Task
+model: sonnet
 agent: technical-director
 ---
 
@@ -30,7 +31,7 @@ status. Re-run whenever new ADRs are accepted or existing ADRs are revised.
 - Note the ADR number and title for every rule sourced
 
 ### Technical Preferences
-- Read `.agents/docs/technical-preferences.md`
+- Read `.claude/docs/technical-preferences.md`
 - Extract: naming conventions, performance budgets, approved libraries/addons,
   forbidden patterns
 
@@ -112,7 +113,13 @@ Total rules extracted:
   - Global: [N] naming conventions, [M] forbidden APIs, [P] approved libraries
 ```
 
-Ask: "Does this look complete? Any rules to add or remove before I write the manifest?"
+Use `AskUserQuestion`:
+- Prompt: "Does this rule summary look complete?"
+- Options:
+  - `[A] Yes — looks good, run the director review and write the manifest`
+  - `[B] Add rules — I have additional rules to include before writing`
+  - `[C] Remove rules — some extracted rules should be dropped`
+  - `[D] Stop here — I need to review the ADRs first`
 
 ---
 
@@ -123,7 +130,7 @@ Ask: "Does this look complete? Any rules to add or remove before I write the man
 - `lean` → skip. Note: "TD-MANIFEST skipped — Lean mode." Proceed to Phase 5.
 - `full` → spawn as normal.
 
-Spawn `technical-director` via task using gate **TD-MANIFEST** (`.agents/docs/director-gates.md`).
+Spawn `technical-director` via Task using gate **TD-MANIFEST** (`.claude/docs/director-gates.md`).
 
 Pass: the Control Manifest Preview from Phase 4 (rule counts per layer, full extracted rule list), the list of ADRs covered, engine version, and any rules sourced from technical-preferences.md or engine reference docs.
 
@@ -135,14 +142,19 @@ The technical-director reviews whether:
 
 Apply the verdict:
 - **APPROVE** → proceed to Phase 5
-- **CONCERNS** → surface via `question` with options: `Revise flagged rules` / `Accept and proceed` / `Discuss further`
+- **CONCERNS** → surface via `AskUserQuestion` with options: `Revise flagged rules` / `Accept and proceed` / `Discuss further`
 - **REJECT** → do not write the manifest; fix the flagged rules and re-present the summary
 
 ---
 
 ## 5. Write the Control Manifest
 
-Ask: "May I write this to `docs/architecture/control-manifest.md`?"
+Use `AskUserQuestion`:
+- Prompt: "May I write the Control Manifest?"
+- Options:
+  - `[A] Yes — write to docs/architecture/control-manifest.md`
+  - `[B] Show me the full draft first, then ask again`
+  - `[C] Not yet — I want to make more changes`
 
 Format:
 

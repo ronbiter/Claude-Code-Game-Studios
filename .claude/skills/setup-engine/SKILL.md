@@ -3,7 +3,8 @@ name: setup-engine
 description: "Configure the project's game engine and version. Pins the engine in CLAUDE.md, detects knowledge gaps, and populates engine reference docs via WebSearch when the version is beyond the LLM's training data."
 argument-hint: "[engine] | [engine version] | refresh | upgrade [old-version] [new-version] | no args for guided selection"
 user-invocable: true
-allowed-tools: Read, Glob, Grep, Write, Edit, WebSearch, WebFetch, task, question
+allowed-tools: Read, Glob, Grep, Write, Edit, WebSearch, WebFetch, Task, AskUserQuestion
+model: sonnet
 ---
 
 When this skill is invoked:
@@ -34,7 +35,7 @@ If no engine is specified, run an interactive engine selection process:
 
 ### If the user wants to pick without a concept, ask in this order:
 
-**Question 1 — Prior experience** (ask this first, always, via `question`):
+**Question 1 — Prior experience** (ask this first, always, via `AskUserQuestion`):
 - Prompt: "Have you worked in any of these engines before?"
 - Options: `Godot` / `Unity` / `Unreal Engine 5` / `Multiple — I'll explain` / `None of them`
 - If they pick a specific engine → recommend that engine. Prior experience outweighs all other factors. Confirm with them and skip the matrix.
@@ -42,7 +43,7 @@ If no engine is specified, run an interactive engine selection process:
 
 **Questions 2-6 — Decision matrix inputs** (only if no prior engine experience):
 
-**Question 2 — Target platform** (ask this second, always, via `question` — platform eliminates or heavily weights engines before any other factor):
+**Question 2 — Target platform** (ask this second, always, via `AskUserQuestion` — platform eliminates or heavily weights engines before any other factor):
 - Prompt: "What platforms are you targeting for this game?"
 - Options: `PC (Steam / Epic)` / `Mobile (iOS / Android)` / `Console` / `Web / Browser` / `Multiple platforms`
 - Platform rules that feed directly into the recommendation:
@@ -99,11 +100,11 @@ Do NOT use a simple scoring matrix that eliminates engines. Instead, reason thro
 2. Give a primary recommendation with honest reasoning
 3. Name the best alternative and when to choose it instead
 4. Explicitly state: "This is a starting point, not a verdict — you can always migrate engines, and many developers switch between projects."
-5. Use `question` to confirm: "Does this recommendation feel right, or would you like to explore a different engine?"
+5. Use `AskUserQuestion` to confirm: "Does this recommendation feel right, or would you like to explore a different engine?"
    - Options: `[Primary engine] (Recommended)` / `[Alternative engine]` / `[Third engine]` / `Explore further` / `Type something`
 
 **If the user picks "Explore further":**
-Use `question` with concept-specific deep-dive topics. Always generate these options from the user's actual concept — do not use generic options. Always include at minimum:
+Use `AskUserQuestion` with concept-specific deep-dive topics. Always generate these options from the user's actual concept — do not use generic options. Always include at minimum:
 - The primary engine's specific limitations for this concept (e.g., "How far can Godot 3D actually go for [genre]?")
 - The alternative engine's specific tradeoffs for this concept
 - Language choice impact on this concept's technical challenges
@@ -171,7 +172,7 @@ Update the Technology Stack section, replacing the `[CHOOSE]` placeholders with 
 
 ## 5. Populate Technical Preferences
 
-After updating CLAUDE.md, create or update `.agents/docs/technical-preferences.md` with
+After updating CLAUDE.md, create or update `.claude/docs/technical-preferences.md` with
 engine-appropriate defaults. Read the existing template first, then fill in:
 
 ### Engine & Language Section
@@ -230,7 +231,7 @@ Example filled section:
 ```
 
 ### Remaining Sections
-- **Performance Budgets**: Use `question`:
+- **Performance Budgets**: Use `AskUserQuestion`:
   - Prompt: "Should I set default performance budgets now, or leave them for later?"
   - Options: `[A] Set defaults now (60fps, 16.6ms frame budget, engine-appropriate draw call limit)` / `[B] Leave as [TO BE CONFIGURED] — I'll set these when I know my target hardware`
   - If [A]: populate with the suggested defaults. If [B]: leave as placeholder.
@@ -560,7 +561,7 @@ Next Steps:
 1. Review docs/engine-reference/<engine>/VERSION.md
 2. [If from /brainstorm] Run /map-systems to decompose your concept into individual systems
 3. [If from /brainstorm] Run /design-system to author per-system GDDs (guided, section-by-section)
-4. [If from /brainstorm] Run /prototype [core-mechanic] to test the core loop
+4. [If from /brainstorm] Run /prototype [core-mechanic] to validate the core idea before writing GDDs
 5. [If fresh start] Run /brainstorm to discover your game concept
 6. Create your first milestone: /sprint-plan new
 ```

@@ -3,8 +3,8 @@ name: story-readiness
 description: "Validate that a story file is implementation-ready. Checks for embedded GDD requirements, ADR references, engine notes, clear acceptance criteria, and no open design questions. Produces READY / NEEDS WORK / BLOCKED verdict with specific gaps. Use when user says 'is this story ready', 'can I start on this story', 'is story X ready to implement'."
 argument-hint: "[story-file-path or 'all' or 'sprint']"
 user-invocable: true
-allowed-tools: Read, Glob, Grep, question, task
-model: haiku
+allowed-tools: Read, Glob, Grep, AskUserQuestion, Task
+model: sonnet
 ---
 
 # Story Readiness
@@ -29,13 +29,13 @@ Resolve the review mode once at startup (store for all gate spawns this run):
 2. Else read `production/review-mode.txt` → use that value
 3. Else → default to `lean`
 
-See `.agents/docs/director-gates.md` for the full check pattern and mode definitions.
+See `.claude/docs/director-gates.md` for the full check pattern and mode definitions.
 
 ---
 
 ## 1. Parse Arguments
 
-**Scope:** `$ARGUMENTS[0]` (blank = ask user via question)
+**Scope:** `$ARGUMENTS[0]` (blank = ask user via AskUserQuestion)
 
 - **Specific path** (e.g., `/story-readiness production/epics/combat/story-001-basic-attack.md`):
   validate that single story file.
@@ -45,7 +45,7 @@ See `.agents/docs/director-gates.md` for the full check pattern and mode definit
   validate every story file found.
 - **No argument**: ask the user which scope to validate.
 
-If no argument is given, use `question`:
+If no argument is given, use `AskUserQuestion`:
 - "What would you like to validate?"
   - Options: "A specific story file", "All stories in the current sprint",
     "All stories in production/epics/", "Stories for a specific epic"
@@ -92,10 +92,14 @@ items pass or are explicitly marked N/A with a stated reason.
   observable condition — not "implement X" or "the system works correctly".
   Bad example: "Implement the jump mechanic." Good example: "Jump reaches
   max height of 5 units within 0.3 seconds when jump is held."
-- [ ] **No acceptance criteria require judgment calls**: Criteria like
+- [ ] **No acceptance criteria require judgment calls** *(auto-pass for `Type: Visual/Feel`)*: Criteria like
   "feels responsive" or "looks good" are not testable without a defined
-  benchmark. These must be replaced with specific observable conditions or
-  playtest protocols.
+  benchmark. For Logic, Integration, UI, and Config/Data stories, these must be
+  replaced with specific observable conditions. For Visual/Feel stories, subjective
+  criteria are expected and this check auto-passes — instead verify that each
+  subjective criterion has a paired playtest protocol or evidence requirement
+  (e.g., "evidence doc required at `production/qa/evidence/[slug]-evidence.md`").
+  PASS if the acceptance criterion ends with or is accompanied by an explicit reference to a file path such as `production/qa/evidence/[slug]-evidence.md`. NEEDS WORK if the criterion is purely subjective with no evidence file path specified.
 
 ### Architecture Completeness
 
@@ -176,8 +180,11 @@ items pass or are explicitly marked N/A with a stated reason.
 
 ### Definition of Done
 
-- [ ] **At least 3 testable acceptance criteria**: Fewer than 3 suggests
-  the story is either trivially small (should it be a story?) or under-specified.
+- [ ] **Minimum testable acceptance criteria by story type**:
+  - Logic / Integration stories: at least 3
+  - Visual/Feel and UI stories: at least 2
+  - Config/Data stories: at least 1
+  Apply the threshold matching the story's `Type:` field. If the story has fewer than the minimum, mark as NEEDS WORK.
 - [ ] **Performance budget noted if applicable**: If this story touches any
   part of the gameplay loop, rendering, or physics, a performance budget or
   a "no performance impact expected — [reason]" note is present.
@@ -325,7 +332,7 @@ Apply the review mode resolved in Phase 0 before spawning QL-STORY-READY:
 - `lean` → skip. Note: "QL-STORY-READY skipped — Lean mode." Proceed to close.
 - `full` → spawn as normal.
 
-Spawn `qa-lead` via task using gate **QL-STORY-READY** (`.agents/docs/director-gates.md`).
+Spawn `qa-lead` via Task using gate **QL-STORY-READY** (`.claude/docs/director-gates.md`).
 
 Pass the following context:
 - Story title
@@ -335,7 +342,7 @@ Pass the following context:
 
 Handle the verdict per standard rules in `director-gates.md`:
 - **ADEQUATE** → story is cleared. Proceed to close.
-- **GAPS [list]** → surface the specific gaps to the user via `question`:
+- **GAPS [list]** → surface the specific gaps to the user via `AskUserQuestion`:
   options: `Update story with suggested gaps` / `Accept and proceed anyway` / `Discuss further`.
 - **INADEQUATE** → surface the specific gaps; ask user whether to update the story or proceed anyway.
 

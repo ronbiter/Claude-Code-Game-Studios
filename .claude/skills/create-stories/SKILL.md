@@ -3,7 +3,8 @@ name: create-stories
 description: "Break a single epic into implementable story files. Reads the epic, its GDD, governing ADRs, and control manifest. Each story embeds its GDD requirement TR-ID, ADR guidance, acceptance criteria, story type, and test evidence path. Run after /create-epics for each epic."
 argument-hint: "[epic-slug | epic-path] [--review full|lean|solo]"
 user-invocable: true
-allowed-tools: Read, Glob, Grep, Write, task, question
+allowed-tools: Read, Glob, Grep, Write, Task, AskUserQuestion
+model: sonnet
 agent: lead-programmer
 ---
 
@@ -28,8 +29,8 @@ then Core, and so on — matching the dependency order.
 
 Extract `--review [full|lean|solo]` if present and store as the review mode
 override for this run. If not provided, read `production/review-mode.txt`
-(default `full` if missing). This resolved mode applies to all gate spawns
-in this skill — apply the check pattern from `.agents/docs/director-gates.md`
+(default `lean` if missing). This resolved mode applies to all gate spawns
+in this skill — apply the check pattern from `.claude/docs/director-gates.md`
 before every gate invocation.
 
 - `/create-stories [epic-slug]` — e.g. `/create-stories combat`
@@ -95,6 +96,8 @@ For each story, determine:
 - **Governing ADR**: which ADR governs how to implement this?
   - `Status: Accepted` → embed normally
   - `Status: Proposed` → set story `Status: Blocked` with note: "BLOCKED: ADR-NNNN is Proposed — run `/architecture-decision` to advance it"
+  - **Multiple ADRs apply**: List all governing ADRs in the story's `Governing ADRs:` field. Designate the one most directly controlling the implementation pattern as primary (first in the list). Others are listed as secondary references.
+  - **No ADR applies at all**: Write `ADR: N/A — [brief reason, e.g. "pure data configuration, no architectural pattern required"]` in the story's ADR field. Do NOT leave the field blank — a blank ADR field means "not checked", not "not applicable".
 - **Story Type**: from Step 3 classification
 - **Engine risk**: from the ADR's Knowledge Risk field
 
@@ -107,13 +110,24 @@ For each story, determine:
 - `lean` → skip (not a PHASE-GATE). Note: "QL-STORY-READY skipped — Lean mode." Proceed to Step 5 (present stories for review).
 - `full` → spawn as normal.
 
-After decomposing all stories (Step 4 complete) but before presenting them for write approval, spawn `qa-lead` via task using gate **QL-STORY-READY** (`.agents/docs/director-gates.md`).
+After decomposing all stories (Step 4 complete) but before presenting them for write approval, spawn `qa-lead` via Task using gate **QL-STORY-READY** (`.claude/docs/director-gates.md`).
 
 Pass: the full story list with acceptance criteria, story types, and TR-IDs; the epic's GDD acceptance criteria for reference.
 
 Present the QA lead's assessment. For each story flagged as GAPS or INADEQUATE, revise the acceptance criteria before proceeding — stories with untestable criteria cannot be implemented correctly. Once all stories reach ADEQUATE, proceed.
 
-**After ADEQUATE**: for every Logic and Integration story, ask the qa-lead to produce concrete test case specifications — one per acceptance criterion — in this format:
+**Before generating test specs**: Glob `production/qa/qa-plan-*.md` for the most recently modified file. If found, read it and check whether it contains test case specifications for the stories in this epic (look for story titles or slugs in the plan's Automated Tests Required section). If matching specs exist:
+- Use `AskUserQuestion`:
+  - Prompt: "A QA plan exists at [path] with test specs for some of these stories. How do you want to proceed?"
+  - Options:
+    - `Use existing specs from the QA plan — embed them into the story files (Recommended)`
+    - `Ask qa-lead to generate fresh specs — override the QA plan`
+    - `Skip test spec generation — I'll fill in ## QA Test Cases manually`
+- If "Use existing specs": extract the test case specs from the qa-plan for each matching story and embed them directly into the `## QA Test Cases` section. No qa-lead spawn needed for those stories. Only spawn qa-lead for stories with no coverage in the qa-plan.
+- If "Generate fresh": proceed with the qa-lead spawn below as normal.
+- If "Skip": leave `## QA Test Cases` with a placeholder: `*Test cases not yet defined — run /qa-plan to generate them.*`
+
+**After ADEQUATE** (or after qa-plan import): for every Logic and Integration story, ask the qa-lead to produce concrete test case specifications — one per acceptance criterion — in this format:
 
 ```
 Test: [criterion text]
@@ -157,7 +171,7 @@ Story 003: [title] — Visual/Feel — ADR-NNNN
 [N stories total: N Logic, N Integration, N Visual/Feel, N UI, N Config/Data]
 ```
 
-Use `question`:
+Use `AskUserQuestion`:
 - Prompt: "May I write these [N] stories to `production/epics/[epic-slug]/`?"
 - Options: `[A] Yes — write all [N] stories` / `[B] Not yet — I want to review or adjust first`
 
@@ -174,7 +188,9 @@ For each story, write `production/epics/[epic-slug]/story-[NNN]-[slug].md`:
 > **Status**: Ready
 > **Layer**: [Foundation / Core / Feature / Presentation]
 > **Type**: [Logic | Integration | Visual/Feel | UI | Config/Data]
+> **Estimate**: [hours or t-shirt size — fill before sprint planning]
 > **Manifest Version**: [date from control-manifest.md header]
+> **Last Updated**: [set by /dev-story when implementation begins]
 
 ## Context
 
@@ -276,11 +292,15 @@ Replace the "Stories: Not yet created" line with a populated table:
 | 002 | [title] | Integration | Ready | ADR-MMMM |
 ```
 
+### Also update `production/epics/index.md`
+
+Find the row in the index table matching this epic (by epic name or slug). Update its `Stories` column from `Not yet created` to `[N] stories` (where N is the count just written). If the index file does not exist, skip silently.
+
 ---
 
 ## 7. After Writing
 
-Use `question` to close with context-aware next steps:
+Use `AskUserQuestion` to close with context-aware next steps:
 
 Check:
 - Are there other epics in `production/epics/` without stories yet? List them.
@@ -291,7 +311,7 @@ Widget:
 - Options (include all that apply):
   - `[A] Start implementing — run /story-readiness [first-story-path]` (Recommended)
   - `[B] Create stories for [next-epic-slug] — run /create-stories [slug]` (only if other epics have no stories yet)
-  - `[C] Plan the sprint — run /sprint-plan` (only if all epics have stories)
+  - `[C] Plan the sprint — run /sprint-plan new` (only if all epics have stories)
   - `[D] Stop here for this session`
 
 Note in output: "Work through stories in order — each story's `Depends on:` field tells you what must be DONE before you can start it."

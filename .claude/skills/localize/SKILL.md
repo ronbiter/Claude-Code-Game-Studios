@@ -4,7 +4,8 @@ description: "Full localization pipeline: scan for hardcoded strings, extract an
 argument-hint: "[scan|extract|validate|status|brief|cultural-review|vo-pipeline|rtl-check|freeze|qa]"
 user-invocable: true
 agent: localization-lead
-allowed-tools: Read, Glob, Grep, Write, Bash, task, question
+allowed-tools: Read, Glob, Grep, Write, Bash, Task, AskUserQuestion
+model: sonnet
 ---
 
 # Localization Pipeline
@@ -179,7 +180,7 @@ Ask: "May I write this translator brief to `production/localization/translator-b
 
 ## Phase 2F: Cultural Review Mode
 
-Spawn `localization-lead` via task. Ask them to audit the following for cultural sensitivity across the target locales (read from `assets/data/strings/` and `assets/`):
+Spawn `localization-lead` via Task. Ask them to audit the following for cultural sensitivity across the target locales (read from `assets/data/strings/` and `assets/`):
 
 ### Content Areas to Review
 
@@ -276,7 +277,7 @@ Grep `src/` for VO audio references. Verify each referenced path exists in `asse
 Right-to-left languages (Arabic, Hebrew, Persian, Urdu) require layout mirroring beyond
 just translating text. This mode validates the implementation.
 
-Read `.agents/docs/technical-preferences.md` to determine the engine. Then check:
+Read `.claude/docs/technical-preferences.md` to determine the engine. Then check:
 
 **Layout mirroring**
 - Is RTL layout enabled in the engine? (Godot: `Control.layout_direction`, Unity: `RTL Support` package, Unreal: text direction flags)
@@ -331,7 +332,7 @@ Pre-Freeze Checklist
 [ ] Marketing strings (store description, achievements) are final
 ```
 
-Use `question`:
+Use `AskUserQuestion`:
 - Prompt: "Are all items above confirmed? Calling string freeze locks the source table."
 - Options: `[A] Yes — call string freeze now` / `[B] No — I still have strings to add`
 
@@ -366,7 +367,7 @@ Localization QA is a dedicated pass that runs after translations are delivered b
 before any locale ships. This is not the same as `/validate` (which checks completeness)
 — this is a structured playthrough-based quality check.
 
-Spawn `localization-lead` via task with:
+Spawn `localization-lead` via Task with:
 - The target locale(s) to QA
 - The list of all screens/flows in the game (from `design/gdd/` or `/content-audit` output)
 - The current `/localize validate` report

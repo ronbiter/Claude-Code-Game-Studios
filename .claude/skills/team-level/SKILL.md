@@ -1,17 +1,31 @@
 ---
 name: team-level
 description: "Orchestrate level design team: level-designer + narrative-director + world-builder + art-director + systems-designer + qa-tester for complete area/level creation."
-argument-hint: "[level name or area to design]"
+argument-hint: "[level name or area to design] [--review full|lean|solo]"
 user-invocable: true
-allowed-tools: Read, Glob, Grep, Write, Edit, Bash, task, question, todowrite
+allowed-tools: Read, Glob, Grep, Write, Edit, Bash, Task, AskUserQuestion, TodoWrite
+model: sonnet
 ---
 
 When this skill is invoked:
 
-**Decision Points:** At each step transition, use `question` to present
+**Decision Points:** At each step transition, use `AskUserQuestion` to present
 the user with the subagent's proposals as selectable options. Write the agent's
 full analysis in conversation, then capture the decision with concise labels.
 The user must approve before moving to the next step.
+
+## Phase 0: Resolve Review Mode
+
+1. If `--review [mode]` was passed as an argument, use that mode.
+2. Else read `production/review-mode.txt` — use whatever is written there.
+3. Else default to `lean`.
+
+Modes:
+- `full` — spawn all director and lead gates as described
+- `lean` — skip director gates unless they are PHASE-GATE type (CD-PHASE-GATE, TD-PHASE-GATE, PR-PHASE-GATE, AD-PHASE-GATE)
+- `solo` — skip all director gate spawning entirely; run the skill without any agent gates
+
+Store the resolved mode for use in all subsequent phases.
 
 1. **Read the argument** for the target level or area (e.g., `tutorial`,
    `forest dungeon`, `hub town`, `final boss arena`).
@@ -25,7 +39,7 @@ The user must approve before moving to the next step.
 
 ## How to Delegate
 
-Use the task tool to spawn each team member as a subagent:
+Use the Task tool to spawn each team member as a subagent:
 - `subagent_type: narrative-director` — Narrative purpose, characters, emotional arc
 - `subagent_type: world-builder` — Lore context, environmental storytelling, world rules
 - `subagent_type: level-designer` — Spatial layout, pacing, encounters, navigation
@@ -40,7 +54,7 @@ Always provide full context in each agent's prompt (game concept, pillars, exist
 
 ### Step 1: Narrative + Visual Direction (narrative-director + world-builder + art-director, parallel)
 
-Spawn all three agents simultaneously — issue all three task calls before waiting for any result.
+Spawn all three agents simultaneously — issue all three Task calls before waiting for any result.
 
 Spawn the `narrative-director` agent to:
 - Define the narrative purpose of this area (what story beats happen here?)
@@ -61,7 +75,7 @@ Spawn the `art-director` agent to:
 
 **The art-director's visual targets from Step 1 must be passed to the level-designer in Step 2** as explicit constraints. Layout decisions happen within the visual direction, not before it.
 
-**Gate**: Use `question` to present all three Step 1 outputs (narrative brief, lore foundation, visual direction targets) and confirm before proceeding to Step 2.
+**Gate**: Use `AskUserQuestion` to present all three Step 1 outputs (narrative brief, lore foundation, visual direction targets) and confirm before proceeding to Step 2.
 
 ### Step 2: Layout and Encounter Design (level-designer)
 Spawn the `level-designer` agent with the full Step 1 output as context:
@@ -80,13 +94,13 @@ The level-designer should:
 **Adjacent area dependency check**: After the layout is produced, check `design/levels/` for each adjacent area referenced by the level-designer. If any referenced area's `.md` file does not exist, surface the gap:
 > "Level references [area-name] as an adjacent area but `design/levels/[area-name].md` does not exist."
 
-Use `question` with options:
+Use `AskUserQuestion` with options:
 - (a) Proceed with a placeholder reference — mark the connection as UNRESOLVED in the level doc and list it in the open cross-level dependencies section of the summary report
 - (b) Pause and run `/team-level [area-name]` first to establish that area
 
 Do NOT invent content for the missing adjacent area.
 
-**Gate**: Use `question` to present Step 2 layout (including any unresolved adjacent area dependencies) and confirm before proceeding to Step 3.
+**Gate**: Use `AskUserQuestion` to present Step 2 layout (including any unresolved adjacent area dependencies) and confirm before proceeding to Step 3.
 
 ### Step 3: Systems Integration (systems-designer)
 Spawn the `systems-designer` agent to:
@@ -96,7 +110,7 @@ Spawn the `systems-designer` agent to:
 - Design any area-specific mechanics or environmental hazards
 - Specify resource distribution (health pickups, save points, shops)
 
-**Gate**: Use `question` to present Step 3 outputs and confirm before proceeding to Step 4.
+**Gate**: Use `AskUserQuestion` to present Step 3 outputs and confirm before proceeding to Step 4.
 
 ### Step 4: Production Concepts + Accessibility (art-director + accessibility-specialist, parallel)
 
@@ -118,7 +132,7 @@ Spawn the `accessibility-specialist` agent in parallel to:
 
 Wait for both agents to return before proceeding.
 
-**Gate**: Use `question` to present both Step 4 results. If the accessibility-specialist returned any BLOCKING concerns, highlight them prominently and offer:
+**Gate**: Use `AskUserQuestion` to present both Step 4 results. If the accessibility-specialist returned any BLOCKING concerns, highlight them prominently and offer:
 - (a) Return to level-designer and art-director to redesign the flagged elements before Step 5
 - (b) Document as a known accessibility gap and proceed to Step 5 with the concern explicitly logged in the final report
 
@@ -134,7 +148,12 @@ Spawn the `qa-tester` agent to:
 4. **Compile the level design document** combining all team outputs into the
    level design template format.
 
-5. **Save to** `design/levels/[level-name].md`.
+After all subagent outputs are collected, spawn `level-designer` via Task to compile and write the final document:
+- Pass: all subagent outputs (verbatim), the level brief, game pillars, relevant GDD sections
+- Ask level-designer to: compile into the level design document format, then request user approval before writing ("May I write the compiled level design to design/levels/[level-name].md?")
+- The orchestrator does NOT call Write directly for the final document.
+
+5. **Save to** `design/levels/[level-name].md` (handled by the level-designer subagent after user approval — see above).
 
 6. **Output a summary** with: area overview, encounter count, estimated asset
    list, narrative beats, any cross-team dependencies or open questions, open
@@ -144,7 +163,7 @@ Spawn the `qa-tester` agent to:
 ## File Write Protocol
 
 All file writes (level design docs, narrative docs, test checklists) are delegated
-to sub-agents spawned via task. Each sub-agent enforces the "May I write to [path]?"
+to sub-agents spawned via Task. Each sub-agent enforces the "May I write to [path]?"
 protocol. This orchestrator does not write files directly.
 
 Verdict: **COMPLETE** — level design document produced and all team outputs compiled.
@@ -158,11 +177,11 @@ Verdict: **BLOCKED** — one or more agents blocked; partial report produced wit
 
 ## Error Recovery Protocol
 
-If any spawned agent (via task) returns BLOCKED, errors, or cannot complete:
+If any spawned agent (via Task) returns BLOCKED, errors, or cannot complete:
 
 1. **Surface immediately**: Report "[AgentName]: BLOCKED — [reason]" to the user before continuing to dependent phases
 2. **Assess dependencies**: Check whether the blocked agent's output is required by subsequent phases. If yes, do not proceed past that dependency point without user input.
-3. **Offer options** via question with choices:
+3. **Offer options** via AskUserQuestion with choices:
    - Skip this agent and note the gap in the final report
    - Retry with narrower scope
    - Stop here and resolve the blocker first

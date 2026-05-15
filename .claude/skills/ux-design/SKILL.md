@@ -3,7 +3,8 @@ name: ux-design
 description: "Guided, section-by-section UX spec authoring for a screen, flow, or HUD. Reads game concept, player journey, and relevant GDDs to provide context-aware design guidance. Produces ux-spec.md (per screen/flow) or hud-design.md using the studio templates."
 argument-hint: "[screen/flow name] or 'hud' or 'patterns'"
 user-invocable: true
-allowed-tools: Read, Glob, Grep, Write, Edit, question, task
+allowed-tools: Read, Glob, Grep, Write, Edit, AskUserQuestion, Task
+model: sonnet
 agent: ux-designer
 ---
 
@@ -20,7 +21,7 @@ Three authoring modes exist based on the argument:
 | Any other value (e.g., `main-menu`, `inventory`) | UX spec for a screen or flow | `design/ux/[argument].md` |
 | No argument | Ask the user | (see below) |
 
-**If no argument is provided**, do not fail — ask instead. Use `question`:
+**If no argument is provided**, do not fail — ask instead. Use `AskUserQuestion`:
 - "What are we designing today?"
   - Options: "A specific screen or flow (I'll name it)", "The game HUD", "The interaction pattern library", "I'm not sure — help me figure it out"
 
@@ -53,6 +54,9 @@ If the player journey file does not exist, note the gap and proceed:
 > "No player journey map found at `design/player-journey.md`. Designing without it
 > means we'll be making assumptions about player context. Consider running a player
 > journey session after this spec is drafted."
+
+Also add to the UX spec's Open Questions section:
+> "Player journey map not yet created. Template available at `.claude/docs/templates/player-journey.md`. Run `/ux-design` Phase 2b or create it manually to establish player context for this screen."
 
 ### 2c: GDD UI Requirements
 
@@ -90,7 +94,7 @@ must satisfy the accessibility tier committed to there.
 
 ### 2h: Input Method (from Project Config)
 
-Read `.agents/docs/technical-preferences.md` and extract the `## Input & Platform`
+Read `.claude/docs/technical-preferences.md` and extract the `## Input & Platform`
 section. Store these values for use throughout the skill — they drive the
 Interaction Map and inform accessibility requirements:
 
@@ -393,7 +397,7 @@ Ask: "May I create the skeleton file at `design/ux/[filename].md`?"
 ---
 
 After writing the skeleton, update `production/session-state/active.md` with:
-- task: Designing [screen/flow name] UX spec
+- Task: Designing [screen/flow name] UX spec
 - Current section: Starting (skeleton created)
 - File: design/ux/[filename].md
 
@@ -409,16 +413,20 @@ Context  ->  Questions  ->  Options  ->  Decision  ->  Draft  ->  Approval  ->  
 
 1. **Context**: State what this section needs to contain and surface any relevant
    constraints from context gathered in Phase 2.
-2. **Questions**: Ask what is needed to draft this section. Use `question`
+2. **Questions**: Ask what is needed to draft this section. Use `AskUserQuestion`
    for constrained choices, conversational text for open-ended exploration.
 3. **Options**: Where design choices exist, present 2-4 approaches with pros/cons.
-   Explain reasoning in conversation, then use `question` to capture the decision.
+   Explain reasoning in conversation, then use `AskUserQuestion` to capture the decision.
 4. **Decision**: User picks an approach or provides custom direction.
 5. **Draft**: Write the section content in conversation for review. Flag provisional
    assumptions explicitly.
-6. **Approval**: "Does this capture it? Any changes before I write it to the file?"
-7. **Write**: Use `Edit` to replace the `[To be designed]` placeholder with approved
-   content. Confirm the write.
+6. **Approval**: Use `AskUserQuestion`:
+   - "Does this capture the [section name] correctly?"
+   - Options: "Yes — write it to the file", "Small changes needed (describe below)", "Major rethink needed"
+   Do not proceed to step 7 until the user selects "Yes".
+7. **Write**: Use `AskUserQuestion`: "May I write the [section name] section to `[filepath]`?"
+   - Options: "Yes, write it", "Wait — one more change"
+   Once confirmed, use `Edit` to replace the `[To be designed]` placeholder with approved content.
 
 After writing each section, update `production/session-state/active.md`.
 
@@ -501,7 +509,9 @@ This is the largest and most interactive section. Work through it in sub-section
   area, action bar, sidebar, etc.).
 - Offer 2-3 zone arrangements with rationale for each. Reference platform and
   input context gathered from game concept.
-- Ask: "Do any of these match your mental image, or shall we build a custom arrangement?"
+- Use `AskUserQuestion` to capture the choice:
+  - "Which zone arrangement fits best?"
+  - Options: [the 2-3 named arrangements you just presented] + "None — build a custom arrangement"
 
 **Sub-section 3 — Component Inventory**:
 - For each zone, list the UI components it contains. For each component, note:
@@ -513,7 +523,7 @@ This is the largest and most interactive section. Work through it in sub-section
 
 **Sub-section 4 — ASCII Wireframe**:
 - Offer to generate an ASCII wireframe based on the zone layout and component list.
-- Use `question`: "Want an ASCII wireframe as part of this spec?"
+- Use `AskUserQuestion`: "Want an ASCII wireframe as part of this spec?"
   - Options: "Yes, include one", "No, I'll attach a separate file"
 - If yes, produce the wireframe in conversation first. Ask for feedback before
   writing it to file.
@@ -631,9 +641,9 @@ Walk through the ux-designer agent's standard checklist for this screen:
 - Screen reader considerations for any non-text elements
 - Any motion or animation that needs a reduced-motion alternative
 
-Use `question` to surface any open questions on accessibility tier:
-- "Has the accessibility tier been committed to for this project?"
-  - Options: "Yes, read from requirements doc", "Not yet — let's flag it as a question", "Skip accessibility section for now"
+If no accessibility tier has been defined for this project, note the gap in the UX spec's Open Questions section:
+> "Accessibility tier not yet defined — consider WCAG-AA as a baseline. Run `/gate-check` to see whether this blocks any phase gates."
+Then continue to the next section without stopping.
 
 ---
 
@@ -672,7 +682,9 @@ Write at least 5 specific, testable criteria that a QA tester can verify without
 - 1 accessibility criterion (per committed tier)
 - 1 criterion specific to this screen's core purpose
 
-Ask the user to confirm: "Do these criteria cover what would actually make this screen 'done' for your QA process?"
+Use `AskUserQuestion` to confirm:
+- "Do these acceptance criteria cover what would make this screen 'done' for your QA process?"
+- Options: "Yes — these are solid", "Add one more criterion", "Remove or rephrase one"
 
 ---
 
@@ -716,7 +728,7 @@ For each item, ask the user to categorize it:
 | **On Demand** | Player must actively request it (toggle, hold button) |
 | **Hidden** | Communicated through world/audio, never on-screen text |
 
-Use `question` to step through items in groups of 3-4, not all at once.
+Use `AskUserQuestion` to step through items in groups of 3-4, not all at once.
 This is the most consequential design decision in the HUD — do not rush it.
 
 **Conflict check**: If the information philosophy (Section A) says "nearly HUD-free"
@@ -812,8 +824,9 @@ For each pattern (existing or new), document:
 **Reference**: [Screenshot path or ASCII example, if available]
 ```
 
-Work through patterns in groups. Offer: "Shall I draft the first batch based on what
-I've found in the existing specs, or do you want to define them one by one?"
+Work through patterns in groups. Use `AskUserQuestion`:
+- "How do you want to work through these patterns?"
+- Options: "Draft the first batch from existing specs (faster)", "Define them one by one (more control)", "Start with the most-used pattern first"
 
 ---
 
@@ -839,8 +852,9 @@ this screen have a corresponding element in this spec? Present any gaps.
 **2. Pattern library alignment**: Are all interaction patterns used in this spec
 referenced by name? If a new pattern was invented during this spec session, flag
 it for addition to the pattern library:
-> "This spec uses [pattern name], which isn't in the pattern library yet.
-> Want to add it now, or flag it as a gap?"
+Use `AskUserQuestion`:
+- "This spec uses [pattern name], which isn't in the pattern library yet. What should we do?"
+- Options: "Add it to the pattern library now", "Flag it as a gap and continue", "Skip — this pattern is one-off"
 
 **3. Navigation consistency**: Do the entry/exit points in this spec match the
 navigation map in any related specs? Flag mismatches.
@@ -868,7 +882,7 @@ When all sections are approved and written:
 ### 6a: Update Session State
 
 Update `production/session-state/active.md` with:
-- task: [screen-name] UX spec
+- Task: [screen-name] UX spec
 - Status: Complete (or In Review)
 - File: design/ux/[filename].md
 - Sections: All written
@@ -882,7 +896,7 @@ Before presenting options, state clearly:
 > implementation pipeline. The Pre-Production gate requires all key screen specs
 > to have a review verdict."
 
-Then use `question`:
+Then use `AskUserQuestion`:
 - "Run `/ux-review [filename]` now, or do something else first?"
   - Options:
     - "Run `/ux-review` now — validate this spec"
@@ -928,7 +942,7 @@ specific sub-topics, additional context or coordination may be needed:
 | Narrative/lore visible in the UI | `narrative-director` — for flavor text, item names, lore panels |
 | Accessibility tier decisions | Handled by this session — owned by ux-designer |
 
-When delegating to another agent via the task tool:
+When delegating to another agent via the Task tool:
 - Provide: screen name, game concept summary, the specific question needing expert input
 - The agent returns analysis to this session
 - This session presents the agent's output to the user
@@ -942,7 +956,7 @@ When delegating to another agent via the task tool:
 This skill follows the collaborative design principle at every step:
 
 1. **Question -> Options -> Decision -> Draft -> Approval** for every section
-2. **question** at every decision point (Explain -> Capture pattern):
+2. **AskUserQuestion** at every decision point (Explain -> Capture pattern):
    - Phase 2: "Ready to start, or need more context?"
    - Phase 3: "May I create the skeleton?"
    - Phase 4 (each section): design questions, approach options, draft approval

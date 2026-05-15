@@ -1,20 +1,34 @@
 ---
 name: team-audio
 description: "Orchestrate audio team: audio-director + sound-designer + technical-artist + gameplay-programmer for full audio pipeline from direction to implementation."
-argument-hint: "[feature or area to design audio for]"
+argument-hint: "[feature or area to design audio for] [--review full|lean|solo]"
 user-invocable: true
-allowed-tools: Read, Glob, Grep, Write, Edit, Bash, task, question, todowrite
+allowed-tools: Read, Glob, Grep, Write, Edit, Bash, Task, AskUserQuestion, TodoWrite
+model: sonnet
 ---
 
 If no argument is provided, output usage guidance and exit without spawning any agents:
-> Usage: `/team-audio [feature or area]` — specify the feature or area to design audio for (e.g., `combat`, `main menu`, `forest biome`, `boss encounter`). Do not use `question` here; output the guidance directly.
+> Usage: `/team-audio [feature or area]` — specify the feature or area to design audio for (e.g., `combat`, `main menu`, `forest biome`, `boss encounter`). Do not use `AskUserQuestion` here; output the guidance directly.
 
 When this skill is invoked with an argument, orchestrate the audio team through a structured pipeline.
 
-**Decision Points:** At each step transition, use `question` to present
+**Decision Points:** At each step transition, use `AskUserQuestion` to present
 the user with the subagent's proposals as selectable options. Write the agent's
 full analysis in conversation, then capture the decision with concise labels.
 The user must approve before moving to the next step.
+
+## Phase 0: Resolve Review Mode
+
+1. If `--review [mode]` was passed as an argument, use that mode.
+2. Else read `production/review-mode.txt` — use whatever is written there.
+3. Else default to `lean`.
+
+Modes:
+- `full` — spawn all director and lead gates as described
+- `lean` — skip director gates unless they are PHASE-GATE type (CD-PHASE-GATE, TD-PHASE-GATE, PR-PHASE-GATE, AD-PHASE-GATE)
+- `solo` — skip all director gate spawning entirely; run the skill without any agent gates
+
+Store the resolved mode for use in all subsequent phases.
 
 1. **Read the argument** for the target feature or area (e.g., `combat`,
    `main menu`, `forest biome`, `boss encounter`).
@@ -27,7 +41,7 @@ The user must approve before moving to the next step.
 
 ## How to Delegate
 
-Use the task tool to spawn each team member as a subagent:
+Use the Task tool to spawn each team member as a subagent:
 - `subagent_type: audio-director` — Sonic identity, emotional tone, audio palette
 - `subagent_type: sound-designer` — SFX specifications, audio events, mixing groups
 - `subagent_type: technical-artist` — Audio middleware, bus structure, memory budgets
@@ -69,7 +83,7 @@ Spawn the `technical-artist` agent to:
 - Plan streaming vs preloaded asset strategy
 - Design any audio-reactive visual effects
 
-Spawn the **primary engine specialist** in parallel (from `.agents/docs/technical-preferences.md` Engine Specialists) to validate the integration approach:
+Spawn the **primary engine specialist** in parallel (from `.claude/docs/technical-preferences.md` Engine Specialists) to validate the integration approach:
 - Is the proposed audio middleware integration idiomatic for the engine? (e.g., Godot's built-in AudioStreamPlayer vs FMOD, Unity's Audio Mixer vs Wwise, Unreal's MetaSounds vs FMOD)
 - Any engine-specific audio node/component patterns that should be used?
 - Known audio system changes in the pinned engine version that affect the integration plan?
@@ -87,7 +101,9 @@ Spawn the `gameplay-programmer` agent to:
 
 4. **Compile the audio design document** combining all team outputs.
 
-5. **Save to** `design/gdd/audio-[feature].md`.
+5. **Save to** `design/audio/audio-[feature].md`.
+
+   Note: If `design/audio/` does not exist, the sub-agent writing the document should create it (the directory will be created automatically when the file is written).
 
 6. **Output a summary** with: audio event count, estimated asset count,
    implementation tasks, and any open questions between team members.
@@ -101,7 +117,7 @@ Verdict: **BLOCKED** — [reason]
 ## File Write Protocol
 
 All file writes (audio design docs, SFX specs, implementation files) are delegated
-to sub-agents spawned via task. Each sub-agent enforces the "May I write to [path]?"
+to sub-agents spawned via Task. Each sub-agent enforces the "May I write to [path]?"
 protocol. This orchestrator does not write files directly.
 
 ## Next Steps
@@ -112,11 +128,11 @@ protocol. This orchestrator does not write files directly.
 
 ## Error Recovery Protocol
 
-If any spawned agent (via task) returns BLOCKED, errors, or cannot complete:
+If any spawned agent (via Task) returns BLOCKED, errors, or cannot complete:
 
 1. **Surface immediately**: Report "[AgentName]: BLOCKED — [reason]" to the user before continuing to dependent phases
 2. **Assess dependencies**: Check whether the blocked agent's output is required by subsequent phases. If yes, do not proceed past that dependency point without user input.
-3. **Offer options** via question with choices:
+3. **Offer options** via AskUserQuestion with choices:
    - Skip this agent and note the gap in the final report
    - Retry with narrower scope
    - Stop here and resolve the blocker first

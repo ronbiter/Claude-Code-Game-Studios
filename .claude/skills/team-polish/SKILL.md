@@ -1,19 +1,35 @@
 ---
 name: team-polish
 description: "Orchestrate the polish team: coordinates performance-analyst, technical-artist, sound-designer, and qa-tester to optimize, polish, and harden a feature or area for release quality."
-argument-hint: "[feature or area to polish]"
+argument-hint: "[feature or area to polish] [--review full|lean|solo]"
 user-invocable: true
-allowed-tools: Read, Glob, Grep, Write, Edit, Bash, task, question, todowrite
+allowed-tools: Read, Glob, Grep, Write, Edit, Bash, Task, AskUserQuestion, TodoWrite
+model: sonnet
 ---
 If no argument is provided, output usage guidance and exit without spawning any agents:
-> Usage: `/team-polish [feature or area]` — specify the feature or area to polish (e.g., `combat`, `main menu`, `inventory system`, `level-1`). Do not use `question` here; output the guidance directly.
+> Usage: `/team-polish [feature or area]` — specify the feature or area to polish (e.g., `combat`, `main menu`, `inventory system`, `level-1`). Do not use `AskUserQuestion` here; output the guidance directly.
 
 When this skill is invoked with an argument, orchestrate the polish team through a structured pipeline.
 
-**Decision Points:** At each phase transition, use `question` to present
+**Decision Points:** At each phase transition, use `AskUserQuestion` to present
 the user with the subagent's proposals as selectable options. Write the agent's
 full analysis in conversation, then capture the decision with concise labels.
 The user must approve before moving to the next phase.
+
+## Phase 0: Resolve Review Mode
+
+1. If `--review [mode]` was passed as an argument, use that mode.
+2. Else read `production/review-mode.txt` — use whatever is written there.
+3. Else default to `lean`.
+
+Modes:
+- `full` — spawn all director and lead gates as described
+- `lean` — skip director gates unless they are PHASE-GATE type (CD-PHASE-GATE, TD-PHASE-GATE, PR-PHASE-GATE, AD-PHASE-GATE)
+- `solo` — skip all director gate spawning entirely; run the skill without any agent gates
+
+Store the resolved mode for use in all subsequent phases.
+
+**Director gate skip rule**: Before spawning any Tier 1 director or lead for review (outside of PHASE-GATE triggers), apply the resolved mode: skip if solo mode; skip if lean mode and this is not a PHASE-GATE.
 
 ## Team Composition
 - **performance-analyst** — Profiling, optimization, memory analysis, frame budget
@@ -25,7 +41,7 @@ The user must approve before moving to the next phase.
 
 ## How to Delegate
 
-Use the task tool to spawn each team member as a subagent:
+Use the Task tool to spawn each team member as a subagent:
 - `subagent_type: performance-analyst` — Profiling, optimization, memory analysis
 - `subagent_type: engine-programmer` — Engine-level fixes for rendering, memory, resource loading
 - `subagent_type: technical-artist` — VFX polish, shader optimization, visual quality
@@ -91,11 +107,11 @@ Delegate to **qa-tester**:
 
 ## Error Recovery Protocol
 
-If any spawned agent (via task) returns BLOCKED, errors, or cannot complete:
+If any spawned agent (via Task) returns BLOCKED, errors, or cannot complete:
 
 1. **Surface immediately**: Report "[AgentName]: BLOCKED — [reason]" to the user before continuing to dependent phases
 2. **Assess dependencies**: Check whether the blocked agent's output is required by subsequent phases. If yes, do not proceed past that dependency point without user input.
-3. **Offer options** via question with choices:
+3. **Offer options** via AskUserQuestion with choices:
    - Skip this agent and note the gap in the final report
    - Retry with narrower scope
    - Stop here and resolve the blocker first
@@ -110,7 +126,7 @@ Common blockers:
 ## File Write Protocol
 
 All file writes (performance reports, test results, evidence docs) are delegated to
-sub-agents spawned via task. Each sub-agent enforces the "May I write to [path]?"
+sub-agents spawned via Task. Each sub-agent enforces the "May I write to [path]?"
 protocol. This orchestrator does not write files directly.
 
 ## Output

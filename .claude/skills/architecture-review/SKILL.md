@@ -3,7 +3,7 @@ name: architecture-review
 description: "Validates completeness and consistency of the project architecture against all GDDs. Builds a traceability matrix mapping every GDD technical requirement to ADRs, identifies coverage gaps, detects cross-ADR conflicts, verifies engine compatibility consistency across all decisions, and produces a PASS/CONCERNS/FAIL verdict. The architecture equivalent of /design-review."
 argument-hint: "[focus: full | coverage | consistency | engine | single-gdd path/to/gdd.md]"
 user-invocable: true
-allowed-tools: Read, Glob, Grep, Write, task, question
+allowed-tools: Read, Glob, Grep, Write, Task, AskUserQuestion
 agent: technical-director
 model: opus
 ---
@@ -68,7 +68,7 @@ Read all inputs appropriate to the mode:
 - All files in `docs/engine-reference/[engine]/modules/`
 
 ### Project Standards
-- `.agents/docs/technical-preferences.md`
+- `.claude/docs/technical-preferences.md`
 
 Report a count: "Loaded [N] GDDs, [M] ADRs, engine: [name + version]."
 
@@ -323,8 +323,8 @@ Post-Cutoff API Conflicts:
 
 ### Engine Specialist Consultation
 
-After completing the engine audit above, spawn the **primary engine specialist** via task for a domain-expert second opinion:
-- Read `.agents/docs/technical-preferences.md` `Engine Specialists` section to get the primary specialist
+After completing the engine audit above, spawn the **primary engine specialist** via Task for a domain-expert second opinion:
+- Read `.claude/docs/technical-preferences.md` `Engine Specialists` section to get the primary specialist
 - If no engine is configured, skip this consultation
 - Spawn `subagent_type: [primary specialist]` with: all ADRs that contain engine-specific decisions or `Post-Cutoff APIs Used` fields, the engine reference docs, and the Phase 5 audit findings. Ask them to:
   1. Confirm or challenge each audit finding — specialists may know of engine nuances not captured in the reference docs
@@ -369,12 +369,17 @@ The GDD should be revised before its system enters implementation.
 If no revision flags are found, write: "No GDD revision flags — all GDD assumptions
 are consistent with verified engine behaviour."
 
-Ask: "Should I flag these GDDs for revision in the systems index?"
-- If yes: update the relevant systems' Status field to "Needs Revision"
-  and add a short inline note in the adjacent Notes/Description column explaining the conflict.
-  Ask for approval before writing.
-  (Do NOT use parentheticals like "Needs Revision (Architecture Feedback)" — other skills
-  match the exact string "Needs Revision" and parentheticals break that match.)
+Before asking, display the proposed change inline — show the current systems-index row for each flagged GDD and the proposed updated row side by side so the user can see exactly what will change.
+
+Then use `AskUserQuestion`:
+- "I found [N] GDD revision flag(s). May I update the systems index?"
+  - [A] Yes — apply all [N] updates to the systems index now
+  - [B] Show me the full diff first, then ask again
+  - [C] No — leave the systems index unchanged for now
+
+If [A]: apply the updates. Status field must be exactly `Needs Revision` — no parentheticals
+(other skills match that exact string and parentheticals break the match).
+If [B]: display the complete proposed systems-index section, then re-ask with `AskUserQuestion`.
 
 ---
 
@@ -451,7 +456,7 @@ FAIL: Critical gaps (Foundation/Core layer requirements uncovered),
 
 ## Phase 8: Write and Update Traceability Index
 
-Use `question` for the write approval:
+Use `AskUserQuestion` for the write approval:
 - "Review complete. What would you like to write?"
   - [A] Write all three files (review report + traceability index + TR registry)
   - [B] Write review report only — `docs/architecture/architecture-review-[date].md`
@@ -459,8 +464,10 @@ Use `question` for the write approval:
 
 ### RTM Output (rtm mode only)
 
-For `rtm` mode, additionally ask: "May I write the full Requirements Traceability
-Matrix to `docs/architecture/requirements-traceability.md`?"
+For `rtm` mode, use `AskUserQuestion`:
+- "May I write the full Requirements Traceability Matrix?"
+  - [A] Yes — write to `docs/architecture/requirements-traceability.md`
+  - [B] Not yet — show me the full RTM data first, then ask again
 
 RTM file format:
 
@@ -600,16 +607,28 @@ After completing the review and writing approved files, present:
 
 1. **Immediate actions**: List the top 3 ADRs to create (highest-impact gaps first,
    Foundation layer before Feature layer)
-2. **Gate guidance**: "When all blocking issues are resolved, run `/gate-check
-   pre-production` to advance"
+2. **Pre-gate checklist**: Check whether these exist via Glob and mark each ✅ or ❌:
+   - `tests/unit/` and `tests/integration/` directories — if ❌: run `/test-setup`
+   - `.github/workflows/tests.yml` — if ❌: run `/test-setup`
+   - `design/accessibility-requirements.md` — if ❌: run `/ux-design`
+   - `design/ux/interaction-patterns.md` — if ❌: run `/ux-design`
+   Present ❌ items as required steps before gate-check. Do not offer `/gate-check`
+   as an option if any item is ❌ — offer the missing skill to run instead.
 3. **Rerun trigger**: "Re-run `/architecture-review` after each new ADR is written
    to verify coverage improves"
 
-Then close with `question`:
-- "Architecture review complete. What would you like to do next?"
-  - [A] Write a missing ADR — open a fresh session and run `/architecture-decision [system]`
-  - [B] Run `/gate-check pre-production` — if all blocking gaps are resolved
-  - [C] Stop here for this session
+Then close with `AskUserQuestion` tailored to the pre-gate checklist state:
+- If ADR gaps remain or any pre-gate item is ❌:
+  - "Architecture review complete. What would you like to do next?"
+    - [A] Write a missing ADR — open a fresh session and run `/architecture-decision [system]`
+    - [B] Run `/test-setup` — required before gate-check (only show if test infrastructure is ❌)
+    - [C] Run `/ux-design` — required before gate-check (only show if UX/accessibility files are ❌)
+    - [D] Stop here for this session
+- If all pre-gate checklist items are ✅ and no blocking ADR gaps remain:
+  - "Architecture review complete. All pre-gate items confirmed. What would you like to do next?"
+    - [A] Run `/gate-check pre-production`
+    - [B] Write a missing ADR — open a fresh session and run `/architecture-decision [system]`
+    - [C] Stop here for this session
 
 ---
 
@@ -619,7 +638,7 @@ If any spawned agent returns BLOCKED, errors, or fails to complete:
 
 1. **Surface immediately**: Report "[AgentName]: BLOCKED — [reason]" before continuing
 2. **Assess dependencies**: If the blocked agent's output is required by a later phase, do not proceed past that phase without user input
-3. **Offer options** via question with three choices:
+3. **Offer options** via AskUserQuestion with three choices:
    - Skip this agent and note the gap in the final report
    - Retry with narrower scope (fewer GDDs, single-system focus)
    - Stop here and resolve the blocker first
@@ -634,6 +653,13 @@ If any spawned agent returns BLOCKED, errors, or fails to complete:
    anything; let the user see the state
 3. **Don't guess** — if a requirement is ambiguous, ask: "Is [X] a technical
    requirement or a design preference?"
-4. **Ask before writing** — always confirm before writing the report file
-5. **Non-blocking** — the verdict is advisory; the user decides whether to continue
+4. **Draft before approval** — always show the content that will be written (the
+   report, the updated ADR section, the systems-index row) inline in the conversation
+   before requesting approval. Never ask to write something the user has not yet seen.
+5. **Use `AskUserQuestion` for write approvals** — plain text "May I?" is not
+   sufficient. Use the structured tool with labeled options [A]/[B]/[C] so the
+   user can choose between "write now", "show full draft first", and "not yet".
+   Multi-file changesets must list every file and what changes, then ask once
+   with grouped options — not a separate plain-text question per file.
+6. **Non-blocking** — the verdict is advisory; the user decides whether to continue
    despite CONCERNS or even FAIL findings

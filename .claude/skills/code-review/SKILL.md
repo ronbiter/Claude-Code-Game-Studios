@@ -3,7 +3,8 @@ name: code-review
 description: "Performs an architectural and quality code review on a specified file or set of files. Checks for coding standard compliance, architectural pattern adherence, SOLID principles, testability, and performance concerns."
 argument-hint: "[path-to-file-or-directory]"
 user-invocable: true
-allowed-tools: Read, Glob, Grep, Bash, task
+allowed-tools: Read, Glob, Grep, Bash, Task, AskUserQuestion
+model: sonnet
 agent: lead-programmer
 ---
 
@@ -15,7 +16,7 @@ Read the target file(s) in full. Read CLAUDE.md for project coding standards.
 
 ## Phase 2: Identify Engine Specialists
 
-Read `.agents/docs/technical-preferences.md`, section `## Engine Specialists`. Note:
+Read `.claude/docs/technical-preferences.md`, section `## Engine Specialists`. Note:
 
 - The **Primary** specialist (used for architecture and broad engine concerns)
 - The **Language/Code Specialist** (used when reviewing the project's primary language files)
@@ -28,9 +29,16 @@ If the section reads `[TO BE CONFIGURED]`, no engine is pinned — skip engine s
 
 ## Phase 3: ADR Compliance Check
 
-Search for ADR references in the story file, commit messages, and header comments. Look for patterns like `ADR-NNN` or `docs/architecture/ADR-`.
+**Argument:** `/code-review [file(s)]` may optionally include a story file path as the last argument (e.g., `/code-review src/combat/attack.gd production/epics/combat/story-001.md`). If a story path is provided, read it to extract the governing ADR reference.
 
-If no ADR references found, note: "No ADR references found — skipping ADR compliance check."
+Search for ADR references in, in priority order:
+1. The story file (if provided as argument)
+2. Header comments at the top of the implementation files
+3. Commit messages referencing these files (`git log --oneline -- [file]`)
+
+Look for patterns like `ADR-NNN` or `docs/architecture/ADR-`.
+
+If no ADR references found, note: "No ADR references found — ADR compliance check skipped. For full ADR compliance review, provide the story path: `/code-review [files] [story-path]`."
 
 For each referenced ADR: read the file, extract the **Decision** and **Consequences** sections, then classify any deviation:
 
@@ -83,7 +91,7 @@ Identify the system category (engine, gameplay, AI, networking, UI, tools) and e
 
 ## Phase 7: Specialist Reviews (Parallel)
 
-Spawn all applicable specialists simultaneously via task — do not wait for one before starting the next.
+Spawn all applicable specialists simultaneously via Task — do not wait for one before starting the next.
 
 ### Engine Specialists
 
@@ -98,7 +106,7 @@ Also spawn the **Primary Specialist** for any file touching engine architecture 
 
 ### QA Testability Review
 
-For Logic and Integration stories, also spawn `qa-tester` via task in parallel with the engine specialists. Pass:
+For Logic and Integration stories, also spawn `qa-tester` via Task in parallel with the engine specialists. Pass:
 - The implementation files being reviewed
 - The story's `## QA Test Cases` section (the pre-written test specs from qa-lead)
 - The story's `## Acceptance Criteria`
@@ -161,6 +169,17 @@ This skill is read-only — no files are written.
 
 ## Phase 9: Next Steps
 
-- If verdict is APPROVED: run `/story-done [story-path]` to close the story.
-- If verdict is CHANGES REQUIRED: fix the issues and re-run `/code-review`.
-- If an ARCHITECTURAL VIOLATION is found: run `/architecture-decision` to record the correct approach.
+Use `AskUserQuestion`:
+- Prompt: "Code review complete — verdict: [APPROVED / CHANGES REQUIRED / MAJOR REVISION]. How would you like to proceed?"
+- Options (adjust based on verdict):
+  - If APPROVED:
+    - `[A] Run /story-done to mark the story complete`
+    - `[B] Stop here`
+  - If CHANGES REQUIRED or MAJOR REVISION:
+    - `[A] Fix the issues and re-run /code-review`
+    - `[B] Run /story-done anyway with noted exceptions`
+    - `[C] Stop here`
+
+If an ARCHITECTURAL VIOLATION is found:
+- If the violation contradicts an **existing ADR**: fix the implementation to comply with `docs/architecture/[adr-file].md`. If the design has legitimately changed, run `/architecture-decision` to formally *revise* the existing ADR — do not create a competing one.
+- If **no ADR exists** for the pattern that was violated: run `/architecture-decision` to document the correct approach before fixing the code.

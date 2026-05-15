@@ -3,7 +3,8 @@ name: map-systems
 description: "Decompose a game concept into individual systems, map dependencies, prioritize design order, and create the systems index."
 argument-hint: "[next | system-name] [--review full|lean|solo]"
 user-invocable: true
-allowed-tools: Read, Glob, Grep, Write, Edit, question, todowrite, task
+allowed-tools: Read, Glob, Grep, Write, Edit, AskUserQuestion, TodoWrite, Task
+model: sonnet
 ---
 
 When this skill is invoked:
@@ -22,7 +23,7 @@ Also resolve the review mode (once, store for all gate spawns this run):
 2. Else read `production/review-mode.txt` → use that value
 3. Else → default to `lean`
 
-See `.agents/docs/director-gates.md` for the full check pattern.
+See `.claude/docs/director-gates.md` for the full check pattern.
 
 ---
 
@@ -44,7 +45,7 @@ for systems decomposition.
 
 **If the systems index already exists:**
 - Read it and present current status to the user
-- Use `question` to ask:
+- Use `AskUserQuestion` to ask:
   "The systems index already exists with [N] systems ([M] designed, [K] not started).
   What would you like to do?"
   - Options: "Update the index with new systems", "Design the next undesigned system",
@@ -96,7 +97,7 @@ Present the enumeration organized by category. For each system, show:
 - Brief description (1 sentence)
 - Whether it was explicit (from concept) or implicit (inferred)
 
-Then use `question` to capture feedback:
+Then use `AskUserQuestion` to capture feedback:
 - "Are there systems missing from this list?"
 - "Should any of these be combined or split?"
 - "Are there systems listed that this game does NOT need?"
@@ -141,7 +142,7 @@ Show the dependency map as a layered list. Highlight:
 - Any "bottleneck" systems (many others depend on them — these are high-risk)
 - Any systems with no dependents (leaf nodes — lower risk, can be designed late)
 
-Use `question` to ask: "Does this dependency ordering look right? Any
+Use `AskUserQuestion` to ask: "Does this dependency ordering look right? Any
 dependencies I'm missing or that should be removed?"
 
 **Review mode check** — apply before spawning TD-SYSTEM-BOUNDARY:
@@ -149,7 +150,7 @@ dependencies I'm missing or that should be removed?"
 - `lean` → skip (not a PHASE-GATE). Note: "TD-SYSTEM-BOUNDARY skipped — Lean mode." Proceed to priority assignment.
 - `full` → spawn as normal.
 
-**After dependency mapping is approved, spawn `technical-director` via task using gate TD-SYSTEM-BOUNDARY (`.agents/docs/director-gates.md`) before proceeding to priority assignment.**
+**After dependency mapping is approved, spawn `technical-director` via Task using gate TD-SYSTEM-BOUNDARY (`.claude/docs/director-gates.md`) before proceeding to priority assignment.**
 
 Pass: the dependency map summary, layer assignments, bottleneck systems list, any circular dependency resolutions.
 
@@ -175,7 +176,7 @@ Use these heuristics for initial assignment:
 Present the priority assignments in a table. For each tier, explain why systems
 were placed there.
 
-Use `question` to ask: "Do these priority assignments match your vision?
+Use `AskUserQuestion` to ask: "Do these priority assignments match your vision?
 Which systems should be higher or lower priority?"
 
 Explain reasoning in conversation: "I placed [system] in MVP because the core loop
@@ -193,7 +194,7 @@ Pure technical necessity ("X depends on Y") is insufficient alone when the syste
 - `lean` → skip (not a PHASE-GATE). Note: "PR-SCOPE skipped — Lean mode." Proceed to writing the systems index.
 - `full` → spawn as normal.
 
-**After priorities are approved, spawn `producer` via task using gate PR-SCOPE (`.agents/docs/director-gates.md`) before writing the index.**
+**After priorities are approved, spawn `producer` via Task using gate PR-SCOPE (`.claude/docs/director-gates.md`) before writing the index.**
 
 Pass: total system count per milestone tier, estimated implementation volume per tier (system count × average complexity), team size, stated project timeline.
 
@@ -216,7 +217,7 @@ This is the order the team should write GDDs in.
 
 ### Step 5a: Draft the Document
 
-Using the template at `.agents/docs/templates/systems-index.md`, populate the
+Using the template at `.claude/docs/templates/systems-index.md`, populate the
 systems index with all data from Phases 2-4:
 - Fill the enumeration table
 - Fill the dependency map
@@ -241,7 +242,7 @@ Wait for approval. Write the file only after "yes."
 - `lean` → skip (not a PHASE-GATE). Note: "CD-SYSTEMS skipped — Lean mode." Proceed to Phase 7 next steps.
 - `full` → spawn as normal.
 
-**After the systems index is written, spawn `creative-director` via task using gate CD-SYSTEMS (`.agents/docs/director-gates.md`).**
+**After the systems index is written, spawn `creative-director` via Task using gate CD-SYSTEMS (`.claude/docs/director-gates.md`).**
 
 Pass: systems index path, game pillars and core fantasy (from `design/gdd/game-concept.md`), MVP priority tier system list.
 
@@ -250,7 +251,7 @@ Present the assessment. If REJECT, revise the system set with the user before GD
 ### Step 5c: Update Session State
 
 After writing, create `production/session-state/active.md` if it does not exist, then update it with:
-- task: Systems decomposition
+- Task: Systems decomposition
 - Status: Systems index created
 - File: design/gdd/systems-index.md
 - Next: Design individual system GDDs
@@ -275,7 +276,7 @@ This phase is entered when:
   "Would you like to start designing individual systems now? The first system in
   the design order is [name]. Or would you prefer to stop here and come back later?"
 
-Use `question` for: "Start designing [system-name] now, pick a different
+Use `AskUserQuestion` for: "Start designing [system-name] now, pick a different
 system, or stop here?"
 
 ### Step 6b: Hand Off to /design-system
@@ -297,7 +298,7 @@ The `/design-system` skill handles the full GDD authoring process:
 
 ### Step 6c: Loop or Stop
 
-After `/design-system` completes, use `question`:
+After `/design-system` completes, use `AskUserQuestion`:
 - "Continue to the next system ([next system name])?"
 - "Pick a different system?"
 - "Stop here for this session?"
@@ -308,14 +309,14 @@ If continuing, return to Step 6a.
 
 ## Phase 7: Suggest Next Steps
 
-After the systems index is created (or after designing some systems), present next actions using `question`:
+After the systems index is created (or after designing some systems), present next actions using `AskUserQuestion`:
 
 - "Systems index is written. What would you like to do next?"
   - [A] Start designing GDDs — run `/design-system [first-system-in-order]`
-  - [B] Ask a director to review the index first — ask `creative-director` or `technical-director` to validate the system set before committing to 10+ GDD sessions
+  - [B] Run `/gate-check systems-design` — triggers the CD-SYSTEMS and TD-SYSTEM-BOUNDARY gates automatically for a formal director sign-off on the system set
   - [C] Stop here for this session
 
-**The director review option ([B]) is worth highlighting**: having a Creative Director or Technical Director review the completed systems index before starting GDD authoring catches scope issues, missing systems, and boundary problems before they're locked in across many documents. It is optional but recommended for new projects.
+**The gate-check option ([B]) is worth highlighting**: running `/gate-check systems-design` triggers both the CD-SYSTEMS and TD-SYSTEM-BOUNDARY gates, catching scope issues, missing systems, and boundary problems before they're locked in across many documents. It is optional but recommended for new projects.
 
 After any individual GDD is completed:
 - "Run `/design-review design/gdd/[system].md` in a fresh session to validate quality"
@@ -328,7 +329,7 @@ After any individual GDD is completed:
 This skill follows the collaborative design principle at every phase:
 
 1. **Question -> Options -> Decision -> Draft -> Approval** at every step
-2. **question** at every decision point (Explain -> Capture pattern):
+2. **AskUserQuestion** at every decision point (Explain -> Capture pattern):
    - Phase 2: "Missing systems? Combine or split?"
    - Phase 3: "Dependency ordering correct?"
    - Phase 4: "Priority assignments match your vision?"

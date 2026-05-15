@@ -3,17 +3,101 @@ name: asset-spec
 description: "Generate per-asset visual specifications and AI generation prompts from GDDs, level docs, or character profiles. Produces structured spec files and updates the master asset manifest. Run after art bible and GDD/level design are approved, before production begins."
 argument-hint: "[system:<name> | level:<name> | character:<name>] [--review full|lean|solo]"
 user-invocable: true
-allowed-tools: Read, Glob, Grep, Write, Edit, task, question
+allowed-tools: Read, Glob, Grep, Write, Edit, Task, AskUserQuestion
+model: sonnet
 ---
 
-If no argument is provided, check whether `design/assets/asset-manifest.md` exists:
-- If it exists: read it, find the first context (system/level/character) with any asset at status "Needed" but no spec file written yet, and use `question`:
-  - Prompt: "The next unspecced context is **[target]**. Generate asset specs for it?"
-  - Options: `[A] Yes — spec [target]` / `[B] Pick a different target` / `[C] Stop here`
-- If no manifest: fail with:
-  > "Usage: `/asset-spec system:<name>` — e.g., `/asset-spec system:tower-defense`
-  > Or: `/asset-spec level:iron-gate-fortress` / `/asset-spec character:frost-warden`
-  > Run after your art bible and GDDs are approved."
+If no argument is provided, check whether `design/assets/entity-inventory.md` exists:
+- If it exists: read it, find the first entity or screen with status "Needed" but no spec file yet, and use `AskUserQuestion`:
+  - Prompt: "The next unspecced item is **[name]**. Generate specs for it?"
+  - Options: `[A] Yes — spec [name]` / `[B] Pick a different item` / `[C] Stop here`
+- If no entity inventory: check `design/assets/asset-manifest.md`. If manifest exists, same flow above but reading from manifest.
+- If neither exists: **start the Entity & Screen Inventory flow** (Phase 0b below) rather than failing.
+
+---
+
+## Phase 0b: Entity & Screen Inventory (runs when no arguments and no existing inventory)
+
+This flow produces `design/assets/entity-inventory.md` — the master list of everything
+the game needs visually. Run once before asset spec work begins.
+
+### Step 1 — Gather from docs
+Read all available source material in parallel:
+- `design/gdd/systems-index.md` — extract every system listed
+- All GDDs in `design/gdd/` — extract: Visual/Audio Requirements sections, UI elements mentioned, VFX events, any named entities (characters, enemies, buildings, items)
+- `design/art/art-bible.md` — extract: any named visual categories, asset type expectations
+- `design/narrative/` — scan for any character or world entity documents if they exist (optional — not required)
+
+### Step 2 — Build proposed inventory
+Organize everything found into categories:
+
+```
+Characters / Protagonists
+Enemies / Creatures
+Buildings / Structures
+Environment / Terrain
+Items / Props
+VFX / Particles
+UI Screens (list each screen by name)
+HUD Elements
+Audio (SFX, music — descriptions only, no generation prompts)
+Other
+```
+
+For each item, note the source doc it was found in.
+
+### Step 3 — Present and collaborate
+Present the full proposed inventory to the user in conversation. Then use `AskUserQuestion`:
+- Prompt: "I found **[N] visual entities and [N] UI screens** across your GDDs and art bible. Review the list — what's missing, what's not needed?"
+- Options:
+  - `[A] Looks good — save this inventory`
+  - `[B] Add items I'll describe`
+  - `[C] Remove items that don't apply`
+  - `[D] Both add and remove — let me edit`
+
+If [B] or [D]: ask the user to describe additional items. Accept brief descriptions ("a medieval keep, used as a level background") or detailed ones — either works. Work through them collaboratively until the user is satisfied.
+
+If [C] or [D]: ask which items to remove and why. Remove them from the list.
+
+### Step 4 — Write inventory
+After user approval, ask: "May I write the entity inventory to `design/assets/entity-inventory.md`?"
+
+Write the file:
+
+```markdown
+# Visual Entity & Screen Inventory
+
+> Generated: [date]
+> Sources: [list of source docs read]
+
+## Entities
+
+| # | Name | Type | Description | Source | Status |
+|---|------|------|-------------|--------|--------|
+| 1 | [name] | Character / Enemy / Building / Environment / Item / Other | [brief description] | [source doc] | Needed |
+
+## UI Screens
+
+| # | Screen Name | Description | Source | Status |
+|---|-------------|-------------|--------|--------|
+| 1 | Main Menu | [description] | [source] | Needed |
+
+## HUD Elements
+
+| # | Element | Description | Source | Status |
+|---|---------|-------------|--------|--------|
+
+## Audio
+
+| # | Name | Type (SFX / Music / Ambient) | Description | Source | Status |
+|---|------|------------------------------|-------------|--------|--------|
+```
+
+After writing, tell the user:
+> "Entity inventory saved. Next steps:
+> - Run `/ux-design [screen name]` for each UI screen in the inventory
+> - Run `/asset-spec entity:[name]` to spec each visual entity
+> - Or run `/asset-spec` again to work through the inventory one item at a time"
 
 ---
 
@@ -40,14 +124,18 @@ Read all source material **before** asking the user anything.
   > "No art bible found. Run `/art-bible` first — asset specs are anchored to the art bible's visual rules and asset standards."
   Extract: Visual Identity Statement, Color System (semantic colors), Shape Language, Asset Standards (Section 8 — dimensions, formats, polycount budgets, texture resolution tiers).
 
-- **Technical preferences**: Read `.agents/docs/technical-preferences.md` — extract performance budgets and naming conventions.
+- **Technical preferences**: Read `.claude/docs/technical-preferences.md` — extract performance budgets and naming conventions.
 
 ### Source doc reads (by target type):
 - **system**: Read `design/gdd/[target-name].md`. Extract the **Visual/Audio Requirements** section. If it doesn't exist or reads `[To be designed]`:
   > "The Visual/Audio section of `design/gdd/[target-name].md` is empty. Either run `/design-system [target-name]` to complete the GDD, or describe the visual needs manually."
-  Use `question`: `[A] Describe needs manually` / `[B] Stop — complete the GDD first`
+  Use `AskUserQuestion`: `[A] Describe needs manually` / `[B] Stop — complete the GDD first`
 - **level**: Read `design/levels/[target-name].md`. Extract art requirements, asset list, VFX needs, and the art-director's production concept specs from Step 4.
-- **character**: Read `design/narrative/characters/[target-name].md` or search `design/narrative/` for the character profile. Extract visual description, role, and any specified distinguishing features.
+- **character** or **entity**: Read `design/narrative/characters/[target-name].md` or search `design/narrative/` and `design/assets/entity-inventory.md` for a matching entry. Extract visual description, role, and any specified distinguishing features.
+  - **If no source doc exists**: do not fail. Instead, use `AskUserQuestion`:
+    - Prompt: "No profile found for **[name]**. Describe it briefly — a sentence or two is enough."
+    - Options: `[A] Describe it now` / `[B] Skip this entity` / `[C] Stop here`
+    - If [A]: the user's description becomes the source. Brief answers produce concise specs; detailed answers produce detailed specs. Accept whatever level of detail the user provides and work from it.
 
 ### Optional reads:
 - **Existing manifest**: Read `design/assets/asset-manifest.md` if it exists — extract already-specced assets for this target to avoid duplicates.
@@ -80,7 +168,7 @@ Group assets into categories:
 - **Audio** — SFX, music tracks, ambient loops *(note: audio specs are descriptions only — no generation prompts)*
 - **3D Assets** — meshes, materials (if applicable per engine)
 
-Present the full identified list to the user. Use `question`:
+Present the full identified list to the user. Use `AskUserQuestion`:
 - Prompt: "I identified [N] assets across [N] categories for **[target]**. Review before speccing:"
 - Show the grouped list in conversation text first
 - Options: `[A] Proceed — spec all of these` / `[B] Remove some assets` / `[C] Add assets I didn't catch` / `[D] Adjust categories`
@@ -91,15 +179,15 @@ Do NOT proceed to Phase 3 without user confirmation of the asset list.
 
 ## Phase 3: Spec Generation
 
-Spawn specialist agents based on review mode. **Issue all task calls simultaneously — do not wait for one before starting the next.**
+Spawn specialist agents based on review mode. **Issue all Task calls simultaneously — do not wait for one before starting the next.**
 
 ### Full mode — spawn in parallel:
 
-**`art-director`** via task:
+**`art-director`** via Task:
 - Provide: full asset list from Phase 2, art bible Visual Identity Statement, Color System, Shape Language, the source doc's visual requirements, and any reference games/art mentioned in the art bible Section 9
 - Ask: "For each asset in this list, produce: (1) a 2–3 sentence visual description anchored to the art bible's shape language and color system — be specific enough that two different artists would produce consistent results; (2) a generation prompt ready for use with AI image tools (Midjourney/Stable Diffusion style — include style keywords, composition, color palette anchors, negative prompts); (3) which art bible rules directly govern this asset (cite by section). For audio assets, describe the sonic character instead of a generation prompt."
 
-**`technical-artist`** via task:
+**`technical-artist`** via Task:
 - Provide: full asset list, art bible Asset Standards (Section 8), technical-preferences.md performance budgets, engine name and version
 - Ask: "For each asset in this list, specify: (1) exact dimensions or polycount (match the art bible Asset Standards tiers — do not invent new sizes); (2) file format and export settings; (3) naming convention (from technical-preferences.md); (4) any engine-specific constraints this asset type must respect; (5) LOD requirements if applicable. Flag any asset type where the art bible's preferred standard conflicts with the engine's constraints."
 
@@ -140,7 +228,7 @@ Combine the agent outputs into a draft spec per asset. Present all specs in conv
 **Status:** Needed
 ```
 
-After presenting all specs, use `question`:
+After presenting all specs, use `AskUserQuestion`:
 - Prompt: "Asset specs for **[target]** — [N] assets. Review complete?"
 - Options: `[A] Approve all — write to file` / `[B] Revise a specific asset` / `[C] Regenerate with different direction`
 
@@ -196,7 +284,7 @@ Ask: "May I update `design/assets/asset-manifest.md`?"
 
 ## Phase 6: Close
 
-Use `question`:
+Use `AskUserQuestion`:
 - Prompt: "Asset specs complete for **[target]**. What's next?"
 - Options:
   - `[A] Spec another system — /asset-spec system:[next-system]`

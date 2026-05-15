@@ -1,21 +1,35 @@
 ---
 name: team-release
 description: "Orchestrate the release team: coordinates release-manager, qa-lead, devops-engineer, and producer to execute a release from candidate to deployment."
-argument-hint: "[version number or 'next']"
+argument-hint: "[version number or 'next'] [--review full|lean|solo]"
 user-invocable: true
-allowed-tools: Read, Glob, Grep, Write, Edit, Bash, task, question, todowrite
+allowed-tools: Read, Glob, Grep, Write, Edit, Bash, Task, AskUserQuestion, TodoWrite
+model: sonnet
 ---
 **Argument check:** If no version number is provided:
 1. Read `production/session-state/active.md` and the most recent file in `production/milestones/` (if they exist) to infer the target version.
-2. If a version is found: report "No version argument provided — inferred [version] from milestone data. Proceeding." Then confirm with `question`: "Releasing [version]. Is this correct?"
-3. If no version is discoverable: use `question` to ask "What version number should be released? (e.g., v1.0.0)" and wait for user input before proceeding. Do NOT default to a hardcoded version string.
+2. If a version is found: report "No version argument provided — inferred [version] from milestone data. Proceeding." Then confirm with `AskUserQuestion`: "Releasing [version]. Is this correct?"
+3. If no version is discoverable: use `AskUserQuestion` to ask "What version number should be released? (e.g., v1.0.0)" and wait for user input before proceeding. Do NOT default to a hardcoded version string.
 
 When this skill is invoked, orchestrate the release team through a structured pipeline.
 
-**Decision Points:** At each phase transition, use `question` to present
+**Decision Points:** At each phase transition, use `AskUserQuestion` to present
 the user with the subagent's proposals as selectable options. Write the agent's
 full analysis in conversation, then capture the decision with concise labels.
 The user must approve before moving to the next phase.
+
+## Phase 0: Resolve Review Mode
+
+1. If `--review [mode]` was passed as an argument, use that mode.
+2. Else read `production/review-mode.txt` — use whatever is written there.
+3. Else default to `lean`.
+
+Modes:
+- `full` — spawn all director and lead gates as described
+- `lean` — skip director gates unless they are PHASE-GATE type (CD-PHASE-GATE, TD-PHASE-GATE, PR-PHASE-GATE, AD-PHASE-GATE)
+- `solo` — skip all director gate spawning entirely; run the skill without any agent gates
+
+Store the resolved mode for use in all subsequent phases.
 
 ## Team Composition
 - **release-manager** — Release branch, versioning, changelog, deployment
@@ -28,7 +42,7 @@ The user must approve before moving to the next phase.
 
 ## How to Delegate
 
-Use the task tool to spawn each team member as a subagent:
+Use the Task tool to spawn each team member as a subagent:
 - `subagent_type: release-manager` — Release branch, versioning, changelog, deployment
 - `subagent_type: qa-lead` — Test sign-off, regression suite, release quality gate
 - `subagent_type: devops-engineer` — Build pipeline, artifacts, deployment automation
@@ -80,7 +94,7 @@ Delegate to **producer**:
 
 **If producer declares NO-GO:**
 - Surface the decision immediately: "PRODUCER: NO-GO — [rationale, e.g., S1 bug found in Phase 3]."
-- Use `question` with options:
+- Use `AskUserQuestion` with options:
   - Fix the blocker and re-run the affected phase
   - Defer the release to a later date
   - Override NO-GO with documented rationale (user must provide written justification)
@@ -88,13 +102,19 @@ Delegate to **producer**:
 - Produce a partial report summarizing Phases 1–5 and what was skipped (Phase 6) and why.
 - Verdict: **BLOCKED** — release not deployed.
 
+After the user selects "Override NO-GO with documented rationale":
+- Ask (plain text, not widget): "Please describe the justification for overriding the NO-GO verdict. This will be embedded in the release record."
+- Wait for the user's written justification.
+- Embed the justification text in the partial approval record before Phase 6: append a "⚠️ Override Justification: [user's text]" field.
+- Only then proceed to Phase 6.
+
 ### Phase 6: Deployment (if GO)
 Delegate to **release-manager** + **devops-engineer**:
 - Tag the release in version control
 - Generate changelog using `/changelog`
 - Deploy to staging for final smoke test
 - Deploy to production
-- Monitor for 48 hours post-release
+- Human team action: Monitor dashboards and error rates for 48 hours post-release. Schedule a follow-up retrospective using `/retrospective` at the 48-hour mark.
 
 Delegate to **community-manager** (in parallel with deployment):
 - Finalize patch notes using `/patch-notes [version]`
@@ -112,11 +132,11 @@ Delegate to **community-manager** (in parallel with deployment):
 
 ## Error Recovery Protocol
 
-If any spawned agent (via task) returns BLOCKED, errors, or cannot complete:
+If any spawned agent (via Task) returns BLOCKED, errors, or cannot complete:
 
 1. **Surface immediately**: Report "[AgentName]: BLOCKED — [reason]" to the user before continuing to dependent phases
 2. **Assess dependencies**: Check whether the blocked agent's output is required by subsequent phases. If yes, do not proceed past that dependency point without user input.
-3. **Offer options** via question with choices:
+3. **Offer options** via AskUserQuestion with choices:
    - Skip this agent and note the gap in the final report
    - Retry with narrower scope
    - Stop here and resolve the blocker first
