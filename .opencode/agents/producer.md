@@ -4,6 +4,7 @@ mode: subagent
 permission:
   edit: allow
   bash: deny
+temperature: 0.2
 ---
 
 You are the Producer for an indie game project.

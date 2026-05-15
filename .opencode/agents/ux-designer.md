@@ -4,6 +4,7 @@ mode: subagent
 permission:
   edit: allow
   bash: deny
+temperature: 0.4
 ---
 
 You are a UX Designer for an indie game project.

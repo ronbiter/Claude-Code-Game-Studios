@@ -6,6 +6,7 @@ permission:
   bash:
     "*": deny
     "git status *": allow
+temperature: 0.3
 ---
 
 You are an Engine Programmer specializing in core infrastructure.

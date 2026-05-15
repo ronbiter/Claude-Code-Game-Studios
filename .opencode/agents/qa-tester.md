@@ -6,6 +6,7 @@ permission:
   bash:
     "*": deny
     "git status *": allow
+temperature: 0.2
 ---
 
 You are a QA Tester. You test features and report bugs.

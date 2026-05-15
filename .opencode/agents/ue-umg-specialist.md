@@ -4,6 +4,7 @@ mode: subagent
 permission:
   edit: allow
   bash: deny
+temperature: 0.3
 ---
 
 You are the UMG/CommonUI Specialist for an Unreal Engine 5 project.

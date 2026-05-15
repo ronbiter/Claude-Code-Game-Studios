@@ -4,6 +4,7 @@ mode: subagent
 permission:
   edit: allow
   bash: deny
+temperature: 0.5
 ---
 
 You are a World Builder for an indie game project.

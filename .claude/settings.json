@@ -1,0 +1,227 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "statusLine": {
+    "type": "command",
+    "command": "bash .agents/statusline.sh"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git branch*)",
+      "Bash(git rev-parse*)",
+      "Bash(ls *)",
+      "Bash(dir *)",
+      "Bash(python -m json.tool*)",
+      "Bash(python -m pytest*)",
+      "Bash(py -m pytest*)"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(git push --force*)",
+      "Bash(git push -f *)",
+      "Bash(git reset --hard*)",
+      "Bash(git clean -f*)",
+      "Bash(sudo *)",
+      "Bash(chmod 777*)",
+      "Bash(*>.env*)",
+      "Bash(cat *.env*)",
+      "Bash(type *.env*)",
+      "Read(**/.env*)"
+    ]
+  },
+  "skillOverrides": {
+    "gsd-add-tests": "off",
+    "gsd-ai-integration-phase": "off",
+    "gsd-audit-fix": "off",
+    "gsd-audit-milestone": "off",
+    "gsd-audit-uat": "off",
+    "gsd-autonomous": "off",
+    "gsd-capture": "off",
+    "gsd-cleanup": "off",
+    "gsd-code-review": "off",
+    "gsd-complete-milestone": "off",
+    "gsd-config": "off",
+    "gsd-debug": "off",
+    "gsd-discuss-phase": "off",
+    "gsd-docs-update": "off",
+    "gsd-eval-review": "off",
+    "gsd-execute-phase": "off",
+    "gsd-explore": "off",
+    "gsd-extract-learnings": "off",
+    "gsd-fast": "off",
+    "gsd-forensics": "off",
+    "gsd-graphify": "off",
+    "gsd-health": "off",
+    "gsd-help": "off",
+    "gsd-import": "off",
+    "gsd-inbox": "off",
+    "gsd-ingest-docs": "off",
+    "gsd-manager": "off",
+    "gsd-map-codebase": "off",
+    "gsd-milestone-summary": "off",
+    "gsd-mvp-phase": "off",
+    "gsd-new-milestone": "off",
+    "gsd-new-project": "off",
+    "gsd-ns-context": "off",
+    "gsd-ns-ideate": "off",
+    "gsd-ns-manage": "off",
+    "gsd-ns-project": "off",
+    "gsd-ns-review": "off",
+    "gsd-ns-workflow": "off",
+    "gsd-pause-work": "off",
+    "gsd-phase": "off",
+    "gsd-plan-phase": "off",
+    "gsd-plan-review-convergence": "off",
+    "gsd-pr-branch": "off",
+    "gsd-profile-user": "off",
+    "gsd-progress": "off",
+    "gsd-quick": "off",
+    "gsd-resume-work": "off",
+    "gsd-review": "off",
+    "gsd-review-backlog": "off",
+    "gsd-secure-phase": "off",
+    "gsd-settings": "off",
+    "gsd-ship": "off",
+    "gsd-sketch": "off",
+    "gsd-spec-phase": "off",
+    "gsd-spike": "off",
+    "gsd-stats": "off",
+    "gsd-thread": "off",
+    "gsd-ui-phase": "off",
+    "gsd-ui-review": "off",
+    "gsd-ultraplan-phase": "off",
+    "gsd-undo": "off",
+    "gsd-update": "off",
+    "gsd-validate-phase": "off",
+    "gsd-verify-work": "off",
+    "gsd-workspace": "off",
+    "gsd-workstreams": "off"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .agents/hooks/session-start.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "bash .agents/hooks/detect-gaps.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .agents/hooks/validate-commit.sh",
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "bash .agents/hooks/validate-push.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .agents/hooks/validate-assets.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "bash .agents/hooks/validate-skill-change.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .agents/hooks/notify.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .agents/hooks/pre-compact.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .agents/hooks/post-compact.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .agents/hooks/session-stop.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .agents/hooks/log-agent.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .agents/hooks/log-agent-stop.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

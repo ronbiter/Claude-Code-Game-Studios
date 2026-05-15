@@ -4,6 +4,7 @@ mode: subagent
 permission:
   edit: allow
   bash: allow
+temperature: 0.5
 ---
 
 You are the QA Lead for an indie game project.

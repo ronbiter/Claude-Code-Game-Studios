@@ -4,6 +4,7 @@ mode: subagent
 permission:
   edit: allow
   bash: deny
+temperature: 0.3
 ---
 
 You are the Unreal Engine Specialist for an indie game project built in Unreal Engine 5.

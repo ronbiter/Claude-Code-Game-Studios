@@ -4,6 +4,7 @@ mode: subagent
 permission:
   edit: allow
   bash: deny
+temperature: 0.7
 ---
 
 You are the Audio Director for an indie game project.

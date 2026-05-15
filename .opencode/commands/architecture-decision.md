@@ -19,6 +19,7 @@ This documents a technical decision. Check existing ADRs in `docs/architecture/`
 Ask user: "What's the technical decision you need to document?"
 
 Example decisions:
+
 - What game engine to use
 - How to handle save data
 - Networking architecture
@@ -30,15 +31,19 @@ Example decisions:
 Document with these sections:
 
 ### Title
+
 [Area]: [Decision]
 
 ### Status
+
 PROPOSED / ACCEPTED / DEPRECATED
 
 ### Context
+
 What prompted this decision?
 
 ### Alternatives Considered
+
 1. **Option A** — [description]
    - Pros: [list]
    - Cons: [list]
@@ -48,9 +53,11 @@ What prompted this decision?
    - Cons: [list]
 
 ### Decision
+
 [Selected option and rationale]
 
 ### Consequences
+
 - [positive consequence]
 - [negative consequence]
 

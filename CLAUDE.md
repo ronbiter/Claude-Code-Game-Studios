@@ -5,30 +5,33 @@ Each agent owns a specific domain, enforcing separation of concerns and quality.
 
 ## Technology Stack
 
-- **Engine**: [CHOOSE: Godot 4 / Unity / Unreal Engine 5]
-- **Language**: [CHOOSE: GDScript / C# / C++ / Blueprint]
+- **Engine**: Unreal Engine 5.7
+- **Language**: C++ (primary), Blueprint (gameplay prototyping)
 - **Version Control**: Git with trunk-based development
-- **Build System**: [SPECIFY after choosing engine]
-- **Asset Pipeline**: [SPECIFY after choosing engine]
-
-> **Note**: Engine-specialist agents exist for Godot, Unity, and Unreal with
-> dedicated sub-specialists. Use the set matching your engine.
+- **Build System**: Unreal Build Tool (UBT)
+- **Asset Pipeline**: Unreal Content Pipeline
 
 ## Project Structure
 
-@.agents/docs/directory-structure.md
+```
+/
+├── CLAUDE.md                    # Master configuration
+├── .agents/                     # Agent definitions, skills, hooks, docs
+├── src/                         # Game source code
+├── assets/                      # Game assets
+├── design/                      # GDDs, narrative, levels, balance
+├── docs/                        # Technical docs + engine-reference/
+├── tests/                       # Test suites
+├── tools/                       # Build and pipeline tools
+├── prototypes/                  # Throwaway prototypes (isolated from src/)
+└── production/                  # Sprints, milestones, releases
+    ├── session-state/           # active.md — living checkpoint (gitignored)
+    └── session-logs/            # Session audit trail (gitignored)
+```
 
 ## Engine Version Reference
 
-@docs/engine-reference/godot/VERSION.md
-
-## Technical Preferences
-
-@.agents/docs/technical-preferences.md
-
-## Coordination Rules
-
-@.agents/docs/coordination-rules.md
+UE 5.7. LLM training cutoff: May 2025. Breaking changes: Substrate materials, PCG API, Megalights, Animation Authoring. Search engram memory for "Unreal Engine 5.7 version reference" before suggesting UE APIs. Full reference: `docs/engine-reference/unreal/VERSION.md`.
 
 ## Collaboration Protocol
 
@@ -40,15 +43,17 @@ Every task follows: **Question -> Options -> Decision -> Draft -> Approval**
 - Multi-file changes require explicit approval for the full changeset
 - No commits without user instruction
 
-See `docs/COLLABORATIVE-DESIGN-PRINCIPLE.md` for full protocol and examples.
-
 > **First session?** If the project has no engine configured and no game concept,
 > run `/start` to begin the guided onboarding flow.
 
-## Coding Standards
+## Studio Standards (search engram memory for details)
 
-@.agents/docs/coding-standards.md
+All agent coordination rules, coding standards, design document requirements,
+technical preferences, and context management strategies are saved in engram memory.
 
-## Context Management
-
-@.agents/docs/context-management.md
+Search engram memory for:
+- **"Agent coordination"** — delegation, model tiers, parallel task protocol
+- **"Coding standards"** — doc comments, ADRs, GDD 8-section standard, testing
+- **"Technical preferences"** — UE5.7, naming, specialist routing, performance
+- **"Context management"** — file-backed state, incremental writing, compaction
+- **"Directory structure"** — project layout (also inlined above)

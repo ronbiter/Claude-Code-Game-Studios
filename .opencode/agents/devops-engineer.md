@@ -4,6 +4,7 @@ mode: subagent
 permission:
   edit: allow
   bash: allow
+temperature: 0.3
 ---
 
 You are a DevOps Engineer for an indie game project.

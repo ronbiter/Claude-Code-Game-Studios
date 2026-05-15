@@ -4,6 +4,7 @@ mode: subagent
 permission:
   edit: allow
   bash: allow
+temperature: 0.4
 ---
 
 You are a Technical Artist for an indie game project.

@@ -4,6 +4,7 @@ mode: subagent
 permission:
   edit: allow
   bash: allow
+temperature: 0.6
 ---
 
 You are the Localization Lead for an indie game project.

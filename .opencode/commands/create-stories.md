@@ -15,6 +15,7 @@ Ask user: "Which epic would you like to break into stories?"
 ## Step 2: Read Epic
 
 Read the selected epic file to understand:
+
 - Systems included
 - GDD requirements
 - ADR guidance
@@ -25,20 +26,25 @@ Read the selected epic file to understand:
 Break each system in the epic into stories:
 
 **Story Format**:
+
 ```markdown
 # Story: [Title]
 
 ## Description
+
 [What this story implements]
 
 ## GDD Requirement
+
 - TR-ID: [from GDD]
 
 ## Acceptance Criteria
+
 1. [Criteria 1]
 2. [Criteria 2]
 
 ## Implementation Notes
+
 - [Technical notes from ADR]
 - [Engine-specific notes]
 ```

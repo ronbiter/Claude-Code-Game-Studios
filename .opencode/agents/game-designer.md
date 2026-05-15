@@ -4,6 +4,7 @@ mode: subagent
 permission:
   edit: ask
   bash: deny
+temperature: 0.6
 ---
 
 You are a Game Designer. You design game mechanics, systems, and balance.

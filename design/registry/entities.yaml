@@ -37,7 +37,7 @@
 #   Each entry: name, status, source, referenced_by[], attributes{}, added, revised
 
 version: 1
-last_updated: ""
+last_updated: "2026-04-30"
 
 # ─── ENTITIES ────────────────────────────────────────────────────────────────
 # Named game-world objects: enemies, NPCs, characters, factions, bosses.
@@ -48,7 +48,54 @@ last_updated: ""
 # Attribute fields: any key stats that could appear in another GDD
 #   (health, damage, drops, faction, etc.)
 
-entities: []
+entities:
+  - name: the_remnant
+    status: active
+    source: design/gdd/faction-reputation-system.md
+    referenced_by:
+      - design/gdd/faction-reputation-system.md
+    type: faction
+    zone: mountain_outpost_bunker
+    description: Ex-military survivors from the prison complex. Organized, armed, pragmatic.
+    initial_relationship_tethered: Rival
+    added: 2026-05-05
+    revised: ""
+
+  - name: the_tethered
+    status: active
+    source: design/gdd/faction-reputation-system.md
+    referenced_by:
+      - design/gdd/faction-reputation-system.md
+    type: faction
+    zone: Z02
+    description: Civilian survivors who stayed and adapted. Scavengers, medics, desperate families.
+    initial_relationship_remnant: Rival
+    added: 2026-05-05
+    revised: ""
+
+  - name: the_hollowed
+    status: active
+    source: design/gdd/faction-reputation-system.md
+    referenced_by:
+      - design/gdd/faction-reputation-system.md
+    type: faction
+    zone: underground_tunnels_hive_fringer
+    description: Infected-but-sentient humans. Not fully alien, not fully human.
+    priority: post_vertical_slice
+    added: 2026-05-05
+    revised: ""
+
+  - name: the_watch
+    status: active
+    source: design/gdd/faction-reputation-system.md
+    referenced_by:
+      - design/gdd/faction-reputation-system.md
+    type: faction
+    zone: ridge_overlook_radio_tower
+    description: Isolationist observers. Former researchers who document rather than intervene.
+    priority: post_vertical_slice
+    added: 2026-05-05
+    revised: ""
 
 # Example (remove when first real entry is added):
 #
@@ -106,7 +153,415 @@ items: []
 #   output_range[min, max], added
 # Optional: expression (the actual formula), notes
 
-formulas: []
+formulas:
+  - name: effective_move_speed
+    status: active
+    source: design/gdd/movement-system.md
+    referenced_by:
+      - design/gdd/movement-system.md
+    variables:
+      - V_base(S)
+      - M_input
+      - M_surface
+      - M_stamina
+      - M_slope
+    output_range: [0, 1170]
+    expression: "V_base(S) × M_input × M_surface × M_stamina × M_slope"
+    notes: "Output in cm/s. Multiplicative stacking prevents degenerate combinations. Slope modifier creates downhill speed assist up to 1.3x."
+    added: 2026-04-29
+    revised: ""
+
+  - name: stamina_consumption
+    status: active
+    source: design/gdd/movement-system.md
+    referenced_by:
+      - design/gdd/movement-system.md
+    variables:
+      - R_drain
+      - C_flat
+      - Δt
+      - S_cur
+    output_range: [0, 25]
+    expression: "R_drain × Δt (continuous) or C_flat (discrete)"
+    notes: "Frame-rate independent. Sprint drains 15/s; Dodge costs 25 flat; Jump costs 10 flat."
+    added: 2026-04-29
+    revised: ""
+
+  - name: stamina_regeneration
+    status: active
+    source: design/gdd/movement-system.md
+    referenced_by:
+      - design/gdd/movement-system.md
+    variables:
+      - R_regen
+      - M_state
+      - M_surface
+      - M_exhaust
+      - T_delay
+    output_range: [0, 24]
+    expression: "R_regen × M_state × M_surface × M_exhaust (after T_delay)"
+    notes: "Effective rate 0–24/s. Worst case (crouch+biomass+exhaust): 4.8/s."
+    added: 2026-04-29
+    revised: ""
+
+  - name: noise_emission_radius
+    status: active
+    source: design/gdd/movement-system.md
+    referenced_by:
+      - design/gdd/movement-system.md
+    variables:
+      - N_base(S)
+      - M_surface_noise
+      - N_exhaust
+      - K_scale
+    output_range: [0, 200]
+    expression: "clamp((N_base(S) × M_surface_noise + N_exhaust) × K_scale, 0, 200)"
+    notes: "Output in meters. K_scale=1.5. Exhaustion adds +15 flat noise before scaling."
+    added: 2026-04-29
+    revised: ""
+
+  - name: dodge_displacement
+    status: active
+    source: design/gdd/movement-system.md
+    referenced_by:
+      - design/gdd/movement-system.md
+    variables:
+      - V_current
+      - T_windup
+      - V_dodge_burst
+      - T_active
+      - V_recovery
+      - T_recovery
+    output_range: [290, 380]
+    expression: "(V_current × T_windup) + (V_dodge_burst × T_active) + (V_recovery × T_recovery)"
+    notes: "Output in cm. GDD '~200 cm' refers to active burst only. Total includes momentum carry and recovery."
+    added: 2026-04-29
+    revised: ""
+
+  - name: healing_effectiveness
+    status: active
+    source: design/gdd/health-system.md
+    referenced_by:
+      - design/gdd/health-system.md
+    variables:
+      - HealAmount
+      - CurrentHP
+      - MaxHP
+    output_range: [0, 60]
+    expression: "min(HealAmount, MaxHP − CurrentHP)"
+    notes: "No overheal. Returns 0 when CurrentHP = 100 (item wasted)."
+    added: 2026-04-29
+    revised: ""
+
+  - name: environmental_damage_tick
+    status: active
+    source: design/gdd/health-system.md
+    referenced_by:
+      - design/gdd/health-system.md
+    variables:
+      - BaseRate
+      - M_zone
+    output_range: [5, 15]
+    expression: "BaseRate × M_zone"
+    notes: "Output in HP/s. Zone multipliers: Z01=1.0, Z02=1.5, Z03=1.0, Z04=2.5, Z05=3.0."
+    added: 2026-04-29
+    revised: ""
+
+  - name: infection_exposure_damage
+    status: active
+    source: design/gdd/health-system.md
+    referenced_by:
+      - design/gdd/health-system.md
+    variables:
+      - BaseExposureRate
+      - T_inBiomass
+      - T_grace
+    output_range: [0, 999]
+    expression: "BaseExposureRate × max(0, T_inBiomass − T_grace)"
+    notes: "Output in HP/s. T_grace=0.5s prevents instant damage from brief contact."
+    added: 2026-04-29
+    revised: ""
+
+  - name: injury_speed_penalty
+    status: active
+    source: design/gdd/health-system.md
+    referenced_by:
+      - design/gdd/health-system.md
+      - design/gdd/movement-system.md
+    variables:
+      - V_base
+      - P_speed
+    output_range: [480, 600]
+    expression: "V_base × (1.0 − P_speed)"
+    notes: "Output in cm/s. P_speed: Operational=0, Wounded=0, Critical=0.1, NearDeath=0.2."
+    added: 2026-04-29
+    revised: ""
+
+  - name: injury_stamina_regen_penalty
+    status: active
+    source: design/gdd/health-system.md
+    referenced_by:
+      - design/gdd/health-system.md
+      - design/gdd/movement-system.md
+    variables:
+      - R_base
+      - P_regen
+    output_range: [12, 20]
+    expression: "R_base × (1.0 − P_regen)"
+    notes: "Output in stamina/s. P_regen: Operational=0, Wounded=0, Critical=0.2, NearDeath=0.4."
+    added: 2026-04-29
+    revised: ""
+
+  - name: injury_sprint_drain_penalty
+    status: active
+    source: design/gdd/health-system.md
+    referenced_by:
+      - design/gdd/health-system.md
+      - design/gdd/movement-system.md
+    variables:
+      - R_sprint_base
+      - P_drain
+    output_range: [15.0, 17.25]
+    expression: "R_sprint_base × (1.0 + P_drain)"
+    notes: "Output in stamina/s. P_drain: Operational=0, Wounded=0, Critical=0.1, NearDeath=0.15."
+    added: 2026-04-29
+    revised: ""
+
+  - name: injury_dodge_recovery_penalty
+    status: active
+    source: design/gdd/health-system.md
+    referenced_by:
+      - design/gdd/health-system.md
+      - design/gdd/movement-system.md
+    variables:
+      - T_recovery_base
+      - P_recovery
+    output_range: [0.30, 0.40]
+    expression: "T_recovery_base + P_recovery"
+    notes: "Output in seconds. P_recovery: Operational=0, Wounded=0, Critical=0, NearDeath=0.1."
+    added: 2026-04-29
+    revised: ""
+
+  - name: cell_infection_pressure
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+    variables:
+      - H_i
+      - d_i
+      - R_i
+      - M_terrain
+      - M_weather
+      - M_cure
+    output_range: [-20, 30]
+    expression: "Σ [ H_i × (1 - (d_i / R_i)²) × M_terrain × M_weather × M_cure ]"
+    notes: "Output in pressure/sec. Summed over all active sources within radius. Negative when cure active. Divided by K_spread_rate (6.0) before accumulation."
+    added: 2026-04-30
+    revised: ""
+
+  - name: infection_tick
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+    variables:
+      - I_old
+      - P_cell
+      - T_tick
+    output_range: [0, 100]
+    expression: "clamp(I_old + (P_cell / K_spread_rate) × T_tick, 0, 100)"
+    notes: "Output is new infection level (0-100). T_tick=10s, K_spread_rate=6.0. Session-scale pacing."
+    added: 2026-04-30
+    revised: ""
+
+  - name: cure_suppressant
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+    variables:
+      - S_cure
+      - d_c
+      - R_c
+      - T_remaining
+      - T_max
+    output_range: [0.0, 1.0]
+    expression: "max(0, 1 - Σ [ S_cure × (1 - (d_c / R_c)²) × T_remaining / T_max ])"
+    notes: "Output is M_cure multiplier. 1.0 = no cure effect, 0.0 = full suppression. Stacks linearly across overlapping cures, caps at 0.0."
+    added: 2026-04-30
+    revised: ""
+
+  - name: hive_spawn_probability
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+    variables:
+      - K_base
+      - W_distance
+      - W_time
+      - R_random
+    output_range: [0.0, 1.0]
+    expression: "clamp(K_base × W_distance × W_time × R_random, 0, 1)"
+    notes: "Evaluated every 30s for eligible cells (level=100, no hive, cooldown expired, zone cap not reached). K_base=0.15."
+    added: 2026-04-30
+    revised: ""
+
+  - name: zone_infection_aggregate
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+      - design/gdd/alien-ai-system.md
+    variables:
+      - I_cell
+      - A_cell
+    output_range: [0, 100]
+    expression: "Σ (I_cell × A_cell) / Σ A_cell"
+    notes: "Weighted average of cell infection levels per zone. Resolves Alien AI OQ-8. Alien AI can use this for zone-level scaling or GetCellInfectionLevel() for per-cell precision."
+    added: 2026-04-30
+    revised: ""
+
+  - name: thread_progress
+    status: active
+    source: design/gdd/investigation-system.md
+    referenced_by:
+      - design/gdd/investigation-system.md
+    variables:
+      - N_discovered
+      - N_total
+    output_range: [0.0, 1.0]
+    expression: "N_discovered / N_total"
+    notes: "Thread completion percentage. State thresholds: Unknown (0.0), Suspected (0.01-0.49), Confirmed (0.50-0.99), Revealed (1.0)."
+    added: 2026-04-30
+    revised: ""
+
+  - name: clue_accessibility
+    status: active
+    source: design/gdd/investigation-system.md
+    referenced_by:
+      - design/gdd/investigation-system.md
+    variables:
+      - G_combat
+      - G_stealth
+      - G_time
+      - G_progression
+    output_range: [0, 1]
+    expression: "G_combat × G_stealth × G_time × G_progression"
+    notes: "Binary output: 0 = blocked, 1 = accessible. All gates are binary (0 or 1). Clue accessible only if all gates pass."
+    added: 2026-04-30
+    revised: ""
+
+  - name: can_carry
+    status: active
+    source: design/gdd/inventory-system.md
+    referenced_by:
+      - design/gdd/inventory-system.md
+    variables:
+      - SlotsUsed
+      - ItemSlots
+      - MaxSlots
+      - WeightCurrent
+      - ItemWeight
+      - MaxWeight
+    output_range: [false, true]
+    expression: "(SlotsUsed + ItemSlots ≤ MaxSlots) AND (WeightCurrent + ItemWeight ≤ MaxWeight)"
+    notes: "Boolean output. Both slot and weight limits must be satisfied to carry an item."
+    added: 2026-04-30
+    revised: ""
+
+  - name: stack_merge
+    status: active
+    source: design/gdd/inventory-system.md
+    referenced_by:
+      - design/gdd/inventory-system.md
+    variables:
+      - QuantityToAdd
+      - MaxStack
+      - CurrentStackCount
+    output_range: [0, QuantityToAdd]
+    expression: "min(QuantityToAdd, MaxStack − CurrentStackCount)"
+    notes: "Returns number of units merged into existing stack. Remaining units form new stack or stay in world."
+    added: 2026-04-30
+    revised: ""
+
+  - name: weight_after_use
+    status: active
+    source: design/gdd/inventory-system.md
+    referenced_by:
+      - design/gdd/inventory-system.md
+    variables:
+      - WeightCurrent
+      - ItemWeight
+      - QuantityConsumed
+    output_range: [0, MaxWeight]
+    expression: "WeightCurrent − (ItemWeight × QuantityConsumed)"
+    notes: "Returns new total weight after item consumption. Always ≤ previous weight."
+    added: 2026-04-30
+    revised: ""
+
+  - name: faction_reputation_delta
+    status: active
+    source: design/gdd/faction-reputation-system.md
+    referenced_by:
+      - design/gdd/faction-reputation-system.md
+      - design/gdd/quest-system.md
+    variables:
+      - base_delta
+      - current_rep
+      - infection_level
+      - desperation_level
+      - K_infection
+      - K_desperation
+    output_range: [-100, +100]
+    expression: "clamp(current_rep + round(base_delta × (1.0 + K_infection × infection_level + K_desperation × desperation_level)), -100, +100)"
+    notes: "Context amplifiers K_infection=0.5, K_desperation=0.5 give max 1.5x amplification. Max amplified delta: ±75."
+    added: 2026-05-05
+    revised: ""
+
+  - name: standing_tier_from_reputation
+    status: active
+    source: design/gdd/faction-reputation-system.md
+    referenced_by:
+      - design/gdd/faction-reputation-system.md
+      - design/gdd/hud-system.md
+    variables:
+      - rep
+    output_range: ["Hunted", "Hostile", "Wary", "Unknown", "Known", "Trusted", "Allied"]
+    expression: "piecewise: rep≤-76→Hunted, -75≤rep≤-51→Hostile, -50≤rep≤-26→Wary, -25≤rep≤+25→Unknown, +26≤rep≤+50→Known, +51≤rep≤+75→Trusted, rep≥+76→Allied"
+    notes: "7 tiers at 25-point intervals. Used by HUD, trade price calculation, and faction-NPC Trust floor."
+    added: 2026-05-05
+    revised: ""
+
+  - name: ripple_effect
+    status: active
+    source: design/gdd/faction-reputation-system.md
+    referenced_by:
+      - design/gdd/faction-reputation-system.md
+    variables:
+      - source_delta
+      - target_rep
+      - relationship
+    output_range: [-100, +100]
+    expression: "abs_delta=|source_delta|; if abs_delta<10: ripple=0; elif abs_delta≥25: ripple=round(source_delta/2.0)×-1; else: ripple=±5(Rival)/±10(Hostile)/0(Neutral). Allied halves negative ripples."
+    notes: "Positive deltas hurt rivals (negative ripple). Negative deltas benefit rivals (positive ripple). Ripple value itself: -38 to +38."
+    added: 2026-05-05
+    revised: ""
+
+  - name: trade_price_modifier
+    status: active
+    source: design/gdd/faction-reputation-system.md
+    referenced_by:
+      - design/gdd/faction-reputation-system.md
+      - design/gdd/inventory-system.md
+    variables:
+      - rep
+    output_range: ["unavailable", 1.00, 0.85, 0.70]
+    expression: "tier=standing_tier_from_reputation(rep); tier∈{Hunted,Hostile,Wary}→N/A, Unknown/Known→1.00, Trusted→0.85, Allied→0.70"
+    notes: "Trade unavailable below Wary. Trusted: 15% discount. Allied: 30% discount."
+    added: 2026-05-05
+    revised: ""
 
 # Example:
 #
@@ -139,7 +594,614 @@ formulas: []
 #
 # Required fields: name, status, source, referenced_by, value, unit, added
 
-constants: []
+constants:
+  # ─── World Partition Constants ─────────────────────────────────────────────
+  - name: wp_cell_size
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: 25200000
+    unit: cm
+    added: 2026-04-29
+    revised: "2026-04-29"
+    # was: 25600 — corrected from 256m hypothesis to 2520m (UE5 World Partition standard)
+
+  - name: wp_hlod_grid_size
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: 25200000
+    unit: cm
+    added: 2026-04-29
+    revised: "2026-04-29"
+    # was: 51200 — HLOD grid matches cell size (2520m)
+
+  - name: streaming_distance_high_lod
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: 12800000
+    unit: cm
+    added: 2026-04-29
+    revised: "2026-04-29"
+    # was: 12800 — corrected to 128m (0.5 cells)
+
+  - name: streaming_distance_medium_lod
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: 38400000
+    unit: cm
+    added: 2026-04-29
+    revised: "2026-04-29"
+    # was: 38400 — corrected to 384m (1.5 cells)
+
+  - name: streaming_distance_low_lod
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: 76800000
+    unit: cm
+    added: 2026-04-29
+    revised: "2026-04-29"
+    # was: 76800 — corrected to 768m (3 cells)
+
+  - name: streaming_distance_unload
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: 102400000
+    unit: cm
+    added: 2026-04-29
+    revised: "2026-04-29"
+    # was: 102400 — corrected to 1024m (4 cells)
+
+  - name: seamless_transition_threshold
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: 4
+    unit: cells
+    added: 2026-04-29
+    revised: ""
+
+  - name: data_layer_activation_latency
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: 2.0
+    unit: seconds
+    added: 2026-04-29
+    revised: ""
+
+  - name: loading_timeout
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: 30
+    unit: seconds
+    added: 2026-04-29
+    revised: ""
+
+  - name: max_concurrent_streaming_requests
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: 8
+    unit: requests
+    added: 2026-04-29
+    revised: ""
+
+  - name: wp_bandwidth_split_world_partition
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: 60
+    unit: percent
+    added: 2026-04-29
+    revised: ""
+
+  - name: wp_bandwidth_split_data_layers
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: 40
+    unit: percent
+    added: 2026-04-29
+    revised: ""
+
+  # ─── Zone Definitions ──────────────────────────────────────────────────────
+  - name: zone_mountain_prison
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: Z01
+    unit: zone_id
+    added: 2026-04-29
+    revised: ""
+
+  - name: zone_infected_town
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: Z02
+    unit: zone_id
+    added: 2026-04-29
+    revised: ""
+
+  - name: zone_resistance_camp
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: Z03
+    unit: zone_id
+    added: 2026-04-29
+    revised: ""
+
+  - name: zone_alien_hive
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: Z04
+    unit: zone_id
+    added: 2026-04-29
+    revised: ""
+
+  - name: zone_dead_zone
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: Z05
+    unit: zone_id
+    added: 2026-04-29
+    revised: ""
+
+  # ─── Movement System Constants ─────────────────────────────────────────────
+  - name: fall_safe_velocity
+    status: active
+    source: design/gdd/movement-system.md
+    referenced_by:
+      - design/gdd/movement-system.md
+      - design/gdd/physics-system.md
+    value: 800
+    unit: cm/s
+    added: 2026-04-29
+    revised: ""
+
+  - name: cover_entry_proximity
+    status: active
+    source: design/gdd/movement-system.md
+    referenced_by:
+      - design/gdd/movement-system.md
+    value: 80
+    unit: cm
+    added: 2026-04-29
+    revised: ""
+
+  - name: exhaustion_noise_floor
+    status: active
+    source: design/gdd/movement-system.md
+    referenced_by:
+      - design/gdd/movement-system.md
+    value: 22.5
+    unit: meters
+    added: 2026-04-29
+    revised: ""
+
+  - name: dodge_min_displacement
+    status: active
+    source: design/gdd/movement-system.md
+    referenced_by:
+      - design/gdd/movement-system.md
+    value: 290
+    unit: cm
+    added: 2026-04-29
+    revised: ""
+
+  - name: crouch_landing_input_window
+    status: active
+    source: design/gdd/movement-system.md
+    referenced_by:
+      - design/gdd/movement-system.md
+    value: 0.15
+    unit: seconds
+    added: 2026-04-29
+    revised: ""
+
+  # ─── Health System Constants ───────────────────────────────────────────────
+  - name: heal_field_dressing
+    status: active
+    source: design/gdd/health-system.md
+    referenced_by:
+      - design/gdd/health-system.md
+    value: 25
+    unit: HP
+    added: 2026-04-29
+    revised: ""
+
+  - name: heal_medkit
+    status: active
+    source: design/gdd/health-system.md
+    referenced_by:
+      - design/gdd/health-system.md
+    value: 60
+    unit: HP
+    added: 2026-04-29
+    revised: ""
+
+  - name: heal_stimshot
+    status: active
+    source: design/gdd/health-system.md
+    referenced_by:
+      - design/gdd/health-system.md
+    value: 40
+    unit: HP
+    added: 2026-04-29
+    revised: ""
+
+  - name: env_damage_base_rate
+    status: active
+    source: design/gdd/health-system.md
+    referenced_by:
+      - design/gdd/health-system.md
+    value: 5.0
+    unit: HP/s
+    added: 2026-04-29
+    revised: ""
+
+  - name: infection_exposure_base_rate
+    status: active
+    source: design/gdd/health-system.md
+    referenced_by:
+      - design/gdd/health-system.md
+    value: 3.0
+    unit: HP/s
+    added: 2026-04-29
+    revised: ""
+
+  - name: infection_grace_period
+    status: active
+    source: design/gdd/health-system.md
+    referenced_by:
+      - design/gdd/health-system.md
+    value: 0.5
+    unit: seconds
+    added: 2026-04-29
+    revised: ""
+
+  # ─── Infection Spread System Constants ─────────────────────────────────────
+  - name: infection_level_range
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+      - design/gdd/alien-ai-system.md
+    value: "0–100"
+    unit: scale
+    added: 2026-04-30
+    revised: ""
+    # Cross-system: Alien AI Rule 10 uses I_zone 0-100 for behavior scaling
+
+  - name: infection_tick_interval
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+    value: 10
+    unit: seconds
+    added: 2026-04-30
+    revised: ""
+
+  - name: infection_spread_rate
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+    value: 6.0
+    unit: divisor
+    added: 2026-04-30
+    revised: ""
+    # Global divisor applied to all pressure values for session-scale pacing
+
+  - name: cure_radius
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+    value: 3000
+    unit: cm
+    added: 2026-04-30
+    revised: ""
+
+  - name: cure_duration
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+    value: 300
+    unit: seconds
+    added: 2026-04-30
+    revised: ""
+
+  - name: cure_strength
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+    value: 0.8
+    unit: multiplier
+    added: 2026-04-30
+    revised: ""
+
+  - name: hive_spawn_cooldown
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+    value: 120
+    unit: seconds
+    added: 2026-04-30
+    revised: ""
+
+  - name: hive_zone_cap
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+    value: 3
+    unit: hives per zone
+    added: 2026-04-30
+    revised: ""
+
+  - name: hive_emerge_duration
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+    value: 8
+    unit: seconds
+    added: 2026-04-30
+    revised: ""
+
+  - name: hive_hp
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+    value: 500
+    unit: HP
+    added: 2026-04-30
+    revised: ""
+
+  - name: node_zone_cap
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+    value: 5
+    unit: nodes per zone
+    added: 2026-04-30
+    revised: ""
+
+  - name: node_hp
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+    value: 150
+    unit: HP
+    added: 2026-04-30
+    revised: ""
+
+  - name: vent_hp
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+    value: 50
+    unit: HP
+    added: 2026-04-30
+    revised: ""
+
+  # ─── Investigation System Constants ────────────────────────────────────────
+  - name: context_trace_length
+    status: active
+    source: design/gdd/player-controller.md
+    referenced_by:
+      - design/gdd/player-controller.md
+      - design/gdd/investigation-system.md
+    value: 500
+    unit: cm
+    added: 2026-04-29
+    revised: "2026-04-30"
+    # Investigation System references this for physical clue discovery range
+
+  - name: env_observation_face_angle
+    status: active
+    source: design/gdd/investigation-system.md
+    referenced_by:
+      - design/gdd/investigation-system.md
+    value: 30
+    unit: degrees
+    added: 2026-04-30
+    revised: ""
+
+  - name: env_observation_hold_time
+    status: active
+    source: design/gdd/investigation-system.md
+    referenced_by:
+      - design/gdd/investigation-system.md
+    value: 2.0
+    unit: seconds
+    added: 2026-04-30
+    revised: ""
+
+  - name: env_observation_radius_min
+    status: active
+    source: design/gdd/investigation-system.md
+    referenced_by:
+      - design/gdd/investigation-system.md
+    value: 200
+    unit: cm
+    added: 2026-04-30
+    revised: ""
+
+  - name: env_observation_radius_max
+    status: active
+    source: design/gdd/investigation-system.md
+    referenced_by:
+      - design/gdd/investigation-system.md
+    value: 500
+    unit: cm
+    added: 2026-04-30
+    revised: ""
+
+  - name: revelation_deferral_check
+    status: active
+    source: design/gdd/investigation-system.md
+    referenced_by:
+      - design/gdd/investigation-system.md
+    value: 5.0
+    unit: seconds
+    added: 2026-04-30
+    revised: ""
+
+  - name: revelation_gap
+    status: active
+    source: design/gdd/investigation-system.md
+    referenced_by:
+      - design/gdd/investigation-system.md
+    value: 10.0
+    unit: seconds
+    added: 2026-04-30
+    revised: ""
+
+  - name: detection_hidden_threshold
+    status: active
+    source: design/gdd/stealth-system.md
+    referenced_by:
+      - design/gdd/stealth-system.md
+      - design/gdd/investigation-system.md
+    value: 25
+    unit: score
+    added: 2026-04-30
+    revised: ""
+    # Investigation System Stealth Gate uses this: detection < 25 = Hidden
+
+  # ─── Inventory System Constants ────────────────────────────────────────────
+  - name: max_slots_base
+    status: active
+    source: design/gdd/inventory-system.md
+    referenced_by:
+      - design/gdd/inventory-system.md
+    value: 20
+    unit: slots
+    added: 2026-04-30
+    revised: ""
+
+  - name: max_slots_expanded
+    status: active
+    source: design/gdd/inventory-system.md
+    referenced_by:
+      - design/gdd/inventory-system.md
+    value: 30
+    unit: slots
+    added: 2026-04-30
+    revised: ""
+
+  - name: max_weight_base
+    status: active
+    source: design/gdd/inventory-system.md
+    referenced_by:
+      - design/gdd/inventory-system.md
+    value: 50
+    unit: kg
+    added: 2026-04-30
+    revised: ""
+
+  - name: max_weight_expanded
+    status: active
+    source: design/gdd/inventory-system.md
+    referenced_by:
+      - design/gdd/inventory-system.md
+    value: 70
+    unit: kg
+    added: 2026-04-30
+    revised: ""
+
+  - name: weapon_slot_count
+    status: active
+    source: design/gdd/inventory-system.md
+    referenced_by:
+      - design/gdd/inventory-system.md
+      - design/gdd/combat-system.md
+    value: 2
+    unit: slots
+    added: 2026-04-30
+    revised: ""
+    # Primary + secondary weapon slots, separate from inventory grid
+
+  - name: quick_slot_count
+    status: active
+    source: design/gdd/inventory-system.md
+    referenced_by:
+      - design/gdd/inventory-system.md
+      - design/gdd/hud-system.md
+    value: 4
+    unit: slots
+    added: 2026-04-30
+    revised: ""
+    # Quick slots for consumables (1-4 keys, D-pad directions)
+
+  - name: movement_dampen_inventory
+    status: active
+    source: design/gdd/inventory-system.md
+    referenced_by:
+      - design/gdd/inventory-system.md
+      - design/gdd/input-system.md
+    value: 0.2
+    unit: multiplier
+    added: 2026-04-30
+    revised: ""
+    # Movement scale when inventory is open (20%)
+
+  - name: cure_device_weight
+    status: active
+    source: design/gdd/inventory-system.md
+    referenced_by:
+      - design/gdd/inventory-system.md
+      - design/gdd/infection-spread-system.md
+    value: 1.0
+    unit: kg
+    added: 2026-04-30
+    revised: ""
+
+  - name: cure_device_slot_footprint
+    status: active
+    source: design/gdd/inventory-system.md
+    referenced_by:
+      - design/gdd/inventory-system.md
+    value: "1x2"
+    unit: slots
+    added: 2026-04-30
+    revised: ""
 
 # Example:
 #

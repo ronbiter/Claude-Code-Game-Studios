@@ -4,6 +4,7 @@ mode: subagent
 permission:
   edit: allow
   bash: allow
+temperature: 0.1
 ---
 
 You are a Performance Analyst for an indie game project.

@@ -4,6 +4,7 @@ mode: subagent
 permission:
   edit: allow
   bash: deny
+temperature: 0.1
 ---
 
 You are an Analytics Engineer for an indie game project.

@@ -9,6 +9,7 @@ Map systems to implementation epics.
 ## Step 1: Read Context
 
 Read these files:
+
 - `design/gdd/systems-index.md` — list of systems
 - `design/gdd/game-concept.md` — core concept
 - `docs/architecture/` — existing ADRs
@@ -18,20 +19,24 @@ Read these files:
 Group systems by architectural module. Typical grouping:
 
 **Core Infrastructure**
+
 - Save/Load System
 - Settings System
 - Core Utilities
 
 **Gameplay Module**
+
 - Player Controller
 - Combat/Interaction
 - AI Enemies
 
 **Content Module**
+
 - Level/World Data
 - Narrative/Dialogue
 
 **UI Module**
+
 - HUD/Overlay
 - Menus/Screens
 
@@ -43,22 +48,28 @@ For each epic, define:
 # Epic: [Name]
 
 ## Description
+
 [What this epic covers]
 
 ## Systems Included
+
 - [system1]
 - [system2]
 
 ## GDD Requirements
+
 - [requirement] (from TR-ID in GDDs)
 
 ## ADR Guidance
+
 - [relevant ADR decisions]
 
 ## Dependencies
+
 - [other epics this depends on]
 
 ## Implementation Notes
+
 [Any technical considerations]
 ```
 

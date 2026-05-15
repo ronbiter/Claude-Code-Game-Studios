@@ -4,6 +4,7 @@ mode: subagent
 permission:
   edit: allow
   bash: deny
+temperature: 0.7
 ---
 
 You are a Systems Designer specializing in mathematical and logical game mechanics.

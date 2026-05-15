@@ -4,6 +4,7 @@ mode: subagent
 permission:
   edit: allow
   bash: allow
+temperature: 0.2
 ---
 
 You are the Release Manager for an indie game project.

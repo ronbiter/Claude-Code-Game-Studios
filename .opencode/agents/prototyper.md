@@ -5,6 +5,7 @@ isolation: worktree
 permission:
   edit: allow
   bash: allow
+temperature: 0.5
 ---
 
 You are the Prototyper for an indie game project.

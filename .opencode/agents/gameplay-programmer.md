@@ -6,6 +6,7 @@ permission:
   bash:
     "*": deny
     "git status *": allow
+temperature: 0.3
 ---
 
 You are a Gameplay Programmer specializing in gameplay mechanics implementation.

@@ -11,7 +11,8 @@ Review code for quality, patterns, and best practices.
 
 List code files in `src/`
 
-Ask user: "Which files would you like to review?" 
+Ask user: "Which files would you like to review?"
+
 - Can pick specific files or directories
 
 Note: `/code-review` is for CODE. For design doc reviews, use `/design-review`.
@@ -25,31 +26,37 @@ Read the selected code files.
 Apply relevant checks based on file location:
 
 ### For gameplay code (`src/gameplay/**`)
+
 - Data-driven values (no hardcoded magic numbers)
 - Delta time usage (frame-rate independent)
 - No UI references in game logic
 
 ### For core code (`src/core/**`)
+
 - Zero allocations in hot paths
 - Thread safety considerations
 - API stability
 
 ### For AI code (`src/ai/**`)
+
 - Performance budgets defined
 - Debugging/logging in place
 - Data-driven parameters
 
 ### For networking code (`src/networking/**`)
+
 - Server-authoritative patterns
 - Versioned messages
 - Security considerations
 
 ### For UI code (`src/ui/**`)
+
 - No game state ownership
 - Localization-ready strings
 - Accessibility considerations
 
 ## Step 4: Check SOLID Principles
+
 - Single Responsibility
 - Open/Closed (open for extension, closed for modification)
 - Liskov Substitution

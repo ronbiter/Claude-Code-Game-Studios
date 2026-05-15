@@ -4,6 +4,7 @@ mode: subagent
 permission:
   edit: allow
   bash: allow
+temperature: 0.2
 ---
 
 You are the Security Engineer for an indie game project.

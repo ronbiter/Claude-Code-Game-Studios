@@ -20,6 +20,7 @@ Note: `/design-review` is for reviewing DESIGN docs. For code reviews, use `/cod
 Read the GDD and check each required section:
 
 ### Required Sections
+
 1. **System Overview** — What is this system?
 2. **Core Mechanics** — Actions and rules
 3. **Player Experience** — The "feel" and "juice"
@@ -32,15 +33,18 @@ Read the GDD and check each required section:
 ## Step 3: Quality Checks
 
 ### Completeness
+
 - Are all 8 sections present?
 - Are sections substantive or placeholder?
 
 ### Consistency
+
 - Does this align with game-concept.md pillars?
 - Are the mechanics achievable in scope?
 - Do numbers/formulas make sense?
 
 ### Implementability
+
 - Is this too vague to implement?
 - Are there hidden assumptions?
 - Are acceptance criteria clear?
