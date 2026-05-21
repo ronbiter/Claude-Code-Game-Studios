@@ -24,33 +24,302 @@
 #
 # STATUS VALUES: active | deprecated | superseded-by: TR-[system]-NNN
 
-version: 1
-last_updated: ""
+version: 3
+last_updated: "2026-05-21"
 
-requirements: []
+requirements:
 
-# --- EXAMPLE ENTRIES (remove when first real entries are added) ---
-#
-# - id: TR-combat-001
-#   system: combat
-#   gdd: design/gdd/combat-system.md
-#   requirement: "Player takes damage from enemies based on attack power minus defence"
-#   created: 2026-03-10
-#   revised: ""
-#   status: active
-#
-# - id: TR-combat-002
-#   system: combat
-#   gdd: design/gdd/combat-system.md
-#   requirement: "Combo window timing is 0.4 seconds between hits"
-#   created: 2026-03-10
-#   revised: "2026-04-01"
-#   status: active
-#
-# - id: TR-combat-003
-#   system: combat
-#   gdd: design/gdd/combat-system.md
-#   requirement: "Old damage formula using raw stats"
-#   created: 2026-03-10
-#   revised: ""
-#   status: superseded-by: TR-combat-001
+  # ============================================================
+  # MOVEMENT SYSTEM (design/gdd/movement-system.md)
+  # ============================================================
+  - { id: TR-movement-001, system: movement, gdd: design/gdd/movement-system.md, requirement: "Movement system extends UE5 CharacterMovementComponent (not replaces it)", created: 2026-05-19, status: active }
+  - { id: TR-movement-002, system: movement, gdd: design/gdd/movement-system.md, requirement: "Maintain 8 movement states (Idle, Walk, Sprint, Crouch, Jump, Fall, Dodge, Cover) with priority resolution", created: 2026-05-19, status: active }
+  - { id: TR-movement-003, system: movement, gdd: design/gdd/movement-system.md, requirement: "Stamina is a float on AHostileCharacter; CMC queries CanSprint/CanDodge/CanJump but never writes", created: 2026-05-19, status: active }
+  - { id: TR-movement-004, system: movement, gdd: design/gdd/movement-system.md, requirement: "Dodge uses MOVE_Custom(0) with three phases (Launch via CMC Launch(), Coast via root motion, Recovery decel)", created: 2026-05-19, status: active }
+  - { id: TR-movement-005, system: movement, gdd: design/gdd/movement-system.md, requirement: "Cover state implemented as UCoverComponent separate from CMC; CMC uses MOVE_Custom(1) during cover", created: 2026-05-19, status: active }
+  - { id: TR-movement-006, system: movement, gdd: design/gdd/movement-system.md, requirement: "Cover proximity detection event-driven (on crouch input, direction change, 4Hz poll) — never per-frame", created: 2026-05-19, status: active }
+  - { id: TR-movement-007, system: movement, gdd: design/gdd/movement-system.md, requirement: "Fire OnDodgeStarted/OnDodgeEnded delegates for Health System i-frame coupling", created: 2026-05-19, status: active }
+  - { id: TR-movement-008, system: movement, gdd: design/gdd/movement-system.md, requirement: "Emit noise events as spherical sound events (radius=Noise×1.5m); AI hearing perception within radius", created: 2026-05-19, status: active }
+  - { id: TR-movement-009, system: movement, gdd: design/gdd/movement-system.md, requirement: "Movement state changes broadcast via OnMovementStateChanged delegate (consumed by Stealth/Camera/AI)", created: 2026-05-19, status: active }
+  - { id: TR-movement-010, system: movement, gdd: design/gdd/movement-system.md, requirement: "All timers (regen delay, exhaustion, dodge phases) tracked in real-time seconds (accumulated Δt), not frame counts", created: 2026-05-19, status: active }
+  - { id: TR-movement-011, system: movement, gdd: design/gdd/movement-system.md, requirement: "Animation Blueprint reads movement state (speed axis, direction angle, surface type) — movement does not drive animation", created: 2026-05-19, status: active }
+  - { id: TR-movement-012, system: movement, gdd: design/gdd/movement-system.md, requirement: "Movement VFX frame budget < 0.5ms; dodge distortion < 0.2ms; max 30 footstep particles, max 8 active decals", created: 2026-05-19, status: active }
+  - { id: TR-movement-013, system: movement, gdd: design/gdd/movement-system.md, requirement: "Foot IK mandatory for all locomotion states", created: 2026-05-19, status: active }
+  - { id: TR-movement-014, system: movement, gdd: design/gdd/movement-system.md, requirement: "Cover animation uses split-body layering (lower body shuffle + additive upper body lean/aim)", created: 2026-05-19, status: active }
+
+  # ============================================================
+  # PHYSICS SYSTEM (design/gdd/physics-system.md)
+  # ============================================================
+  - { id: TR-physics-001, system: physics, gdd: design/gdd/physics-system.md, requirement: "Use UE 5.7 Chaos Physics (not legacy PhysX)", created: 2026-05-19, status: active }
+  - { id: TR-physics-002, system: physics, gdd: design/gdd/physics-system.md, requirement: "Custom collision channels: ECC_Player, ECC_Alien, ECC_Infection, ECC_WorldObject, ECC_Vehicle, ECC_Projectile, ECC_Interactable, ECC_AIPerception", created: 2026-05-19, status: active }
+  - { id: TR-physics-003, system: physics, gdd: design/gdd/physics-system.md, requirement: "Per-surface PhysicalMaterial assets with friction and restitution for Snow/Ice/Metal/Concrete/Biomass/Wood/Glass", created: 2026-05-19, status: active }
+  - { id: TR-physics-004, system: physics, gdd: design/gdd/physics-system.md, requirement: "Ground detection via line trace from pelvis (150cm); surface classified per-frame via Physical Material", created: 2026-05-19, status: active }
+  - { id: TR-physics-005, system: physics, gdd: design/gdd/physics-system.md, requirement: "Weapon hit detection uses single line trace (hitscan); AI perception uses multi-trace + overlap cone; landing uses sphere sweep", created: 2026-05-19, status: active }
+  - { id: TR-physics-006, system: physics, gdd: design/gdd/physics-system.md, requirement: "Glass shattering uses Chaos Destruction Geometry Collection", created: 2026-05-19, status: active }
+  - { id: TR-physics-007, system: physics, gdd: design/gdd/physics-system.md, requirement: "Ragdoll blend from animation over 0.3s on death", created: 2026-05-19, status: active }
+  - { id: TR-physics-008, system: physics, gdd: design/gdd/physics-system.md, requirement: "Expose IPhysicsSystem interface (surface queries, raycasts, fall damage calc, impact/landing delegates)", created: 2026-05-19, status: active }
+  - { id: TR-physics-009, system: physics, gdd: design/gdd/physics-system.md, requirement: "Physics sub-step configuration target for 60fps (Project Settings > Engine > Physics > Max Substep Delta Time)", created: 2026-05-19, status: active }
+  - { id: TR-physics-010, system: physics, gdd: design/gdd/physics-system.md, requirement: "Fire OnImpact and OnLanded delegates; consumers subscribe via SubscribeToImpact/SubscribeToLanding", created: 2026-05-19, status: active }
+
+  # ============================================================
+  # SCENE MANAGEMENT (design/gdd/scene-management.md)
+  # ============================================================
+  - { id: TR-scene-001, system: scene, gdd: design/gdd/scene-management.md, requirement: "World Partition is single streaming authority; no manual level streaming overlaps in open world", created: 2026-05-19, status: active }
+  - { id: TR-scene-002, system: scene, gdd: design/gdd/scene-management.md, requirement: "World Partition cell size 25,200,000cm (2520m), immutable after project creation", created: 2026-05-19, status: active }
+  - { id: TR-scene-003, system: scene, gdd: design/gdd/scene-management.md, requirement: "Max 500 actors per cell (use HLOD, instanced meshes, Nanite to reduce)", created: 2026-05-19, status: active }
+  - { id: TR-scene-004, system: scene, gdd: design/gdd/scene-management.md, requirement: "Use Runtime Grid Tags for zone identification; Data Layers for runtime content activation", created: 2026-05-19, status: active }
+  - { id: TR-scene-005, system: scene, gdd: design/gdd/scene-management.md, requirement: "Generate HLOD for both Clean and Infected Data Layer variants at build time", created: 2026-05-19, status: active }
+  - { id: TR-scene-006, system: scene, gdd: design/gdd/scene-management.md, requirement: "Async asset loading via FStreamableManager during GSM Loading state; 30s timeout with partial-load fallback", created: 2026-05-19, status: active }
+  - { id: TR-scene-007, system: scene, gdd: design/gdd/scene-management.md, requirement: "Streaming memory pool budget: PC high 4096MB, PC med 2048MB, PS5 3072MB, PS4 1536MB", created: 2026-05-19, status: active }
+  - { id: TR-scene-008, system: scene, gdd: design/gdd/scene-management.md, requirement: "Max 8 concurrent I/O requests with 60/40 split (WorldPartition/DataLayers)", created: 2026-05-19, status: active }
+  - { id: TR-scene-009, system: scene, gdd: design/gdd/scene-management.md, requirement: "Expose ISceneManagementSubsystem (zone queries, RequestDataLayerSwap, streaming state, Save/Restore)", created: 2026-05-19, status: active }
+  - { id: TR-scene-010, system: scene, gdd: design/gdd/scene-management.md, requirement: "Data Layer swap state machine: DL_Idle → DL_Unloading → DL_Flushing → DL_Loading → DL_Active with rollback on failure", created: 2026-05-19, status: active }
+  - { id: TR-scene-011, system: scene, gdd: design/gdd/scene-management.md, requirement: "Fire OnZoneCrossed and OnDataLayerChanged delegates", created: 2026-05-19, status: active }
+  - { id: TR-scene-012, system: scene, gdd: design/gdd/scene-management.md, requirement: "Frame-time guarantee: no frame >33.3ms during zone crossfade at max sprint", created: 2026-05-19, status: active }
+  - { id: TR-scene-013, system: scene, gdd: design/gdd/scene-management.md, requirement: "Switch all zone crossings to GSM Loading mode if SSD bandwidth <200MB/s", created: 2026-05-19, status: active }
+
+  # ============================================================
+  # INFECTION SPREAD (design/gdd/infection-spread-system.md)
+  # ============================================================
+  - { id: TR-infection-001, system: infection, gdd: design/gdd/infection-spread-system.md, requirement: "UInfectionSpreadSubsystem implemented as UGameInstanceSubsystem", created: 2026-05-19, status: active }
+  - { id: TR-infection-002, system: infection, gdd: design/gdd/infection-spread-system.md, requirement: "Infection tick interval 10s (configurable); per-cell evaluation only when sources are in range", created: 2026-05-19, status: active }
+  - { id: TR-infection-003, system: infection, gdd: design/gdd/infection-spread-system.md, requirement: "Max 25 cells evaluated per tick (5x5 around player); per-cell calc O(n) where n = active sources in range", created: 2026-05-19, status: active }
+  - { id: TR-infection-004, system: infection, gdd: design/gdd/infection-spread-system.md, requirement: "Tick CPU budget <1.0ms on game thread; memory footprint <2MB for infection state", created: 2026-05-19, status: active }
+  - { id: TR-infection-005, system: infection, gdd: design/gdd/infection-spread-system.md, requirement: "Pause ticks when GSM enters Paused/GameOver; no catch-up on resume", created: 2026-05-19, status: active }
+  - { id: TR-infection-006, system: infection, gdd: design/gdd/infection-spread-system.md, requirement: "Call ISceneManagement::RequestDataLayerSwap on state threshold crossings", created: 2026-05-19, status: active }
+  - { id: TR-infection-007, system: infection, gdd: design/gdd/infection-spread-system.md, requirement: "Expose IInfectionSpreadSubsystem with cell queries, source management, cure deploy, Save/Restore", created: 2026-05-19, status: active }
+  - { id: TR-infection-008, system: infection, gdd: design/gdd/infection-spread-system.md, requirement: "Fire OnCellStateChanged, OnHiveSpawned, OnSourceDestroyed, OnCureDeployed events", created: 2026-05-19, status: active }
+  - { id: TR-infection-009, system: infection, gdd: design/gdd/infection-spread-system.md, requirement: "Source HP managed by Infection Spread directly (not Health System); Combat System calls DamageInfectionSource", created: 2026-05-19, status: active }
+  - { id: TR-infection-010, system: infection, gdd: design/gdd/infection-spread-system.md, requirement: "Fast-travel simulates infection ticks during travel; deterministic given state", created: 2026-05-19, status: active }
+
+  # ============================================================
+  # GAME STATE MACHINE (design/gdd/game-state-machine.md)
+  # ============================================================
+  - { id: TR-gsm-001, system: gsm, gdd: design/gdd/game-state-machine.md, requirement: "Single authoritative GSM component (UHostileWorldGameStateMachine) owned by GameMode; no parallel state", created: 2026-05-19, status: active }
+  - { id: TR-gsm-002, system: gsm, gdd: design/gdd/game-state-machine.md, requirement: "Event-driven transitions only; no polling; events queued and processed in order of receipt", created: 2026-05-19, status: active }
+  - { id: TR-gsm-003, system: gsm, gdd: design/gdd/game-state-machine.md, requirement: "Priority LIFO stack with 8 states (Title=0, Loading=1, Playing=10, Paused=20, Cutscene=25, Dialogue=30, Inventory=35, GameOver=100)", created: 2026-05-19, status: active }
+  - { id: TR-gsm-004, system: gsm, gdd: design/gdd/game-state-machine.md, requirement: "Exit fires before transition animation; Entry fires after transition; once exit begins transition runs to completion", created: 2026-05-19, status: active }
+  - { id: TR-gsm-005, system: gsm, gdd: design/gdd/game-state-machine.md, requirement: "Subscription model via SubscribeToStateChange (FStateChangeDelegate) with reentrancy guard", created: 2026-05-19, status: active }
+  - { id: TR-gsm-006, system: gsm, gdd: design/gdd/game-state-machine.md, requirement: "GameOver exception: priority 100 always wins; clears entire stack", created: 2026-05-19, status: active }
+  - { id: TR-gsm-007, system: gsm, gdd: design/gdd/game-state-machine.md, requirement: "Reentrancy guard blocks nested state changes within callback; queue and execute after current frame callbacks complete", created: 2026-05-19, status: active }
+  - { id: TR-gsm-008, system: gsm, gdd: design/gdd/game-state-machine.md, requirement: "Same-frame transition requests sorted by requesting state priority before processing", created: 2026-05-19, status: active }
+  - { id: TR-gsm-009, system: gsm, gdd: design/gdd/game-state-machine.md, requirement: "Combat engagement bypass: Interruptible states (Inventory/Dialogue/Paused) popped on enemy engagement; 0.1s fast transition to Playing; timescale reset to 1.0x", created: 2026-05-19, status: active }
+  - { id: TR-gsm-010, system: gsm, gdd: design/gdd/game-state-machine.md, requirement: "World timescale 0.0 during Paused; 0.85 during Inventory/Dialogue (GSM owns WorldSlowFactor)", created: 2026-05-19, status: active }
+  - { id: TR-gsm-011, system: gsm, gdd: design/gdd/game-state-machine.md, requirement: "MaxStackDepth 8; TransitionQueue size 16", created: 2026-05-19, status: active }
+  - { id: TR-gsm-012, system: gsm, gdd: design/gdd/game-state-machine.md, requirement: "Expose IGameStateMachine: GetCurrentState, GetActiveStates, IsStateActive, RequestStateTransition, Subscribe/Unsubscribe", created: 2026-05-19, status: active }
+
+  # ============================================================
+  # PLAYER CONTROLLER (design/gdd/player-controller.md)
+  # ============================================================
+  - { id: TR-pc-001, system: pc, gdd: design/gdd/player-controller.md, requirement: "Thin Router pattern: APlayerController routes input, manages IMC stack, resolves context actions; no gameplay logic on PC", created: 2026-05-19, status: active }
+  - { id: TR-pc-002, system: pc, gdd: design/gdd/player-controller.md, requirement: "Routes input to subsystems via Unreal dynamic multicast delegates (FOnActionRouted); no direct function calls", created: 2026-05-19, status: active }
+  - { id: TR-pc-003, system: pc, gdd: design/gdd/player-controller.md, requirement: "Context action resolver: proximity sphere overlap for NPCs (200cm), async line trace from camera for items (500cm)", created: 2026-05-19, status: active }
+  - { id: TR-pc-004, system: pc, gdd: design/gdd/player-controller.md, requirement: "Context traces use UWorld::AsyncLineTraceByChannel (non-blocking on game thread; results processed in callback next frame)", created: 2026-05-19, status: active }
+  - { id: TR-pc-005, system: pc, gdd: design/gdd/player-controller.md, requirement: "Context resolver runs at 4Hz (0.25s) — never per-frame; polling rate scales with target count", created: 2026-05-19, status: active }
+  - { id: TR-pc-006, system: pc, gdd: design/gdd/player-controller.md, requirement: "Subscribes to subsystem events (Health, Movement, Camera, Combat, Stealth, GSM); does not poll", created: 2026-05-19, status: active }
+  - { id: TR-pc-007, system: pc, gdd: design/gdd/player-controller.md, requirement: "Combat action input latency <50ms (T_input + T_routing + T_subsystem + T_animation) at 60fps", created: 2026-05-19, status: active }
+  - { id: TR-pc-008, system: pc, gdd: design/gdd/player-controller.md, requirement: "Movement action input latency <100ms at 60fps", created: 2026-05-19, status: active }
+  - { id: TR-pc-009, system: pc, gdd: design/gdd/player-controller.md, requirement: "Pushes/pops IMC_Stealth on crouch toggle and detection ≥25 (dual trigger)", created: 2026-05-19, status: active }
+  - { id: TR-pc-010, system: pc, gdd: design/gdd/player-controller.md, requirement: "Exposes PushCombatIMC()/PopCombatIMC() bridge methods (PC owns LocalPlayer reference); Combat System owns the push/pop decision and triggers Combat Mode at detection =100 — PC is the API bridge, not the decision-maker (per ADR-0014 + combat GDD unified combat-state model)", created: 2026-05-19, revised: 2026-05-21, status: active }
+  - { id: TR-pc-011, system: pc, gdd: design/gdd/player-controller.md, requirement: "FContextPrompt struct fields: Target, ActionLabel, TargetName, Type, Priority, bRequiresTool, RequiredTool", created: 2026-05-19, status: active }
+
+  # ============================================================
+  # CAMERA SYSTEM (design/gdd/camera-system.md)
+  # ============================================================
+  - { id: TR-camera-001, system: camera, gdd: design/gdd/camera-system.md, requirement: "5 camera modes (ThirdPerson, FirstPerson, Cinematic, Mounted, Conversation) with mode-switching via APlayerCameraManager", created: 2026-05-19, status: active }
+  - { id: TR-camera-002, system: camera, gdd: design/gdd/camera-system.md, requirement: "Mode transitions use SetViewTargetWithBlend with configurable EaseInOut curve", created: 2026-05-19, status: active }
+  - { id: TR-camera-003, system: camera, gdd: design/gdd/camera-system.md, requirement: "Spring-arm uses ProbeChannel=ECC_Camera; retract speed 500cm/s; min arm length 50cm", created: 2026-05-19, status: active }
+  - { id: TR-camera-004, system: camera, gdd: design/gdd/camera-system.md, requirement: "Procedural camera shake via UCameraShakeBase (Perlin noise); positional for impacts, rotational for terraform events", created: 2026-05-19, status: active }
+  - { id: TR-camera-005, system: camera, gdd: design/gdd/camera-system.md, requirement: "Cinematic mode reads shot parameters via Sequencer (location, rotation, FOV, DOF)", created: 2026-05-19, status: active }
+  - { id: TR-camera-006, system: camera, gdd: design/gdd/camera-system.md, requirement: "Lumen auto-exposure tuned for snow glare (bright) vs. prison interior (dark)", created: 2026-05-19, status: active }
+  - { id: TR-camera-007, system: camera, gdd: design/gdd/camera-system.md, requirement: "Expose ICameraSystem (mode mgmt, parameter queries, AddShake/AddRecoil, SubscribeToModeChanged)", created: 2026-05-19, status: active }
+  - { id: TR-camera-008, system: camera, gdd: design/gdd/camera-system.md, requirement: "Shake stacking: explosion + terraform stack additively; cap 25px amplitude / 15° rotation", created: 2026-05-19, status: active }
+
+  # ============================================================
+  # DIALOGUE SYSTEM (design/gdd/dialogue-system.md)
+  # ============================================================
+  - { id: TR-dialogue-001, system: dialogue, gdd: design/gdd/dialogue-system.md, requirement: "UDialogueSubsystem implemented as UGameInstanceSubsystem", created: 2026-05-19, status: active }
+  - { id: TR-dialogue-002, system: dialogue, gdd: design/gdd/dialogue-system.md, requirement: "Dialogue trees stored in Data Tables (DT_Dialogue_[NPCId]) using FDialogueNode struct (13 fields) + FDialogueChoice (9 fields)", created: 2026-05-19, status: active }
+  - { id: TR-dialogue-003, system: dialogue, gdd: design/gdd/dialogue-system.md, requirement: "Per-NPC relationship state tracked across 3 dimensions (Trust, Fear, Knowledge), clamped 0-100", created: 2026-05-19, status: active }
+  - { id: TR-dialogue-004, system: dialogue, gdd: design/gdd/dialogue-system.md, requirement: "5 NPC types (Survivor, Faction Leader, Ambient, Terminal, Hostile) with differing relationship tracking", created: 2026-05-19, status: active }
+  - { id: TR-dialogue-005, system: dialogue, gdd: design/gdd/dialogue-system.md, requirement: "Radial choice wheel renders 5-8 segments in semi-circle; supports gamepad stick rotation, mouse wheel, number keys 1-5, arrow + Enter", created: 2026-05-19, status: active }
+  - { id: TR-dialogue-006, system: dialogue, gdd: design/gdd/dialogue-system.md, requirement: "Melee interrupt safety override: alien within 150cm pops dialogue; configurable MeleeInterruptRange", created: 2026-05-19, status: active }
+  - { id: TR-dialogue-007, system: dialogue, gdd: design/gdd/dialogue-system.md, requirement: "Camera transitions to Conversation mode (OTS, 250cm, 30° offset, 55° FOV) over 0.5s blend on dialogue start", created: 2026-05-19, status: active }
+  - { id: TR-dialogue-008, system: dialogue, gdd: design/gdd/dialogue-system.md, requirement: "Fire OnDialogueStarted, OnDialogueEnded, OnClueDiscovered delegates; persist state via SaveDialogueState/Restore", created: 2026-05-19, status: active }
+  - { id: TR-dialogue-009, system: dialogue, gdd: design/gdd/dialogue-system.md, requirement: "Fear recovery driven by non-dialogue actions (kill alien -15, supplies -10, world event -20, passive decay -5/10min)", created: 2026-05-19, status: active }
+
+  # ============================================================
+  # INPUT SYSTEM (design/gdd/input-system.md)
+  # ============================================================
+  - { id: TR-input-001, system: input, gdd: design/gdd/input-system.md, requirement: "Use UE5.7 Enhanced Input exclusively; legacy BindAction/BindAxis forbidden", created: 2026-05-19, status: active }
+  - { id: TR-input-002, system: input, gdd: design/gdd/input-system.md, requirement: "Define 22 Input Actions (IA_Move, IA_Look, IA_Sprint, IA_Crouch, IA_Jump, IA_Interact, IA_Attack, IA_Aim, IA_Reload, IA_QuickSlot1-4, IA_Inventory, IA_Map, IA_Pause, IA_Dodge, IA_Melee, IA_Flashlight, IA_LeanLeft, IA_LeanRight, IA_Zoom)", created: 2026-05-19, status: active }
+  - { id: TR-input-003, system: input, gdd: design/gdd/input-system.md, requirement: "Define 8 Input Mapping Contexts (IMC_Default, IMC_Stealth, IMC_Combat, IMC_Mounted, IMC_Cutscene, IMC_Dialogue, IMC_Inventory, IMC_Menu) with priority levels", created: 2026-05-19, status: active }
+  - { id: TR-input-004, system: input, gdd: design/gdd/input-system.md, requirement: "Runtime key rebinding for all actions except IA_Pause (hardlocked Escape+Start); conflict detection on rebind", created: 2026-05-19, status: active }
+  - { id: TR-input-005, system: input, gdd: design/gdd/input-system.md, requirement: "Stick dead zone 0.125 radial; trigger dead zone 0.1", created: 2026-05-19, status: active }
+  - { id: TR-input-006, system: input, gdd: design/gdd/input-system.md, requirement: "Atomic context transitions (push/pop only, no hybrid execution); shared actions resolved by top-of-stack context", created: 2026-05-19, status: active }
+  - { id: TR-input-007, system: input, gdd: design/gdd/input-system.md, requirement: "Auto-pause on Alt+Tab / focus loss; resume on focus regain", created: 2026-05-19, status: active }
+  - { id: TR-input-008, system: input, gdd: design/gdd/input-system.md, requirement: "Dual-mode input when UI is open: keyboard+mouse and gamepad both active simultaneously", created: 2026-05-19, status: active }
+  - { id: TR-input-009, system: input, gdd: design/gdd/input-system.md, requirement: "Persist rebinding profiles via Save/Load (per-player profile)", created: 2026-05-19, status: active }
+  - { id: TR-input-010, system: input, gdd: design/gdd/input-system.md, requirement: "Lean actions (IA_LeanLeft/Right) gated to Cover state only", created: 2026-05-19, status: active }
+
+  # ============================================================
+  # HEALTH SYSTEM (design/gdd/health-system.md)
+  # ============================================================
+  - { id: TR-health-001, system: health, gdd: design/gdd/health-system.md, requirement: "Single int32 HP pool on player character; fixed max 100; no overheal", created: 2026-05-19, status: active }
+  - { id: TR-health-002, system: health, gdd: design/gdd/health-system.md, requirement: "EDamageType enum with extensible cases (Physical, Fall, Environmental, InfectionExposure)", created: 2026-05-19, status: active }
+  - { id: TR-health-003, system: health, gdd: design/gdd/health-system.md, requirement: "TakeDamage(float, EDamageType) interface; pipeline: invuln check → fall crouch modifier → apply → death check → OnHealthChanged broadcast", created: 2026-05-19, status: active }
+  - { id: TR-health-004, system: health, gdd: design/gdd/health-system.md, requirement: "Dodge i-frames fully negate damage during 0.25s active window (subscribes to Movement OnDodgeStarted/Ended)", created: 2026-05-19, status: active }
+  - { id: TR-health-005, system: health, gdd: design/gdd/health-system.md, requirement: "Death event calls RequestStateTransition(PlayerDied) on GSM for GameOver transition", created: 2026-05-19, status: active }
+  - { id: TR-health-006, system: health, gdd: design/gdd/health-system.md, requirement: "Health VFX frame budget <0.3ms; max 5 simultaneous blood decals; single pass post-process distortion", created: 2026-05-19, status: active }
+  - { id: TR-health-007, system: health, gdd: design/gdd/health-system.md, requirement: "Persist health state via SaveHealthState/RestoreHealthState", created: 2026-05-19, status: active }
+  - { id: TR-health-008, system: health, gdd: design/gdd/health-system.md, requirement: "Healing consumables interruptible: Field Dressing/Medkit cancel on damage/movement; Stimshot NOT interruptible by damage", created: 2026-05-19, status: active }
+
+  # ============================================================
+  # STEALTH SYSTEM (design/gdd/stealth-system.md)
+  # ============================================================
+  - { id: TR-stealth-001, system: stealth, gdd: design/gdd/stealth-system.md, requirement: "Per-alien detection score 0-100; global detection = max of all individual scores", created: 2026-05-19, status: active }
+  - { id: TR-stealth-002, system: stealth, gdd: design/gdd/stealth-system.md, requirement: "5 detection states (Hidden 0-24, Suspicious 25-49, Alert 50-74, Engaged 75-99, Detected 100) with cooldown-gated de-escalation", created: 2026-05-19, status: active }
+  - { id: TR-stealth-003, system: stealth, gdd: design/gdd/stealth-system.md, requirement: "Expose IStealthDetection::GetDetectionScore(ActorRef) returning 0-100 (read-only from alien perspective)", created: 2026-05-19, status: active }
+  - { id: TR-stealth-004, system: stealth, gdd: design/gdd/stealth-system.md, requirement: "Per-alien detection calc budget <0.1ms; max 20 simultaneous aliens calculating detection", created: 2026-05-19, status: active }
+  - { id: TR-stealth-005, system: stealth, gdd: design/gdd/stealth-system.md, requirement: "Stealth VFX frame budget <0.3ms; audio mixing for tension layer <0.2ms", created: 2026-05-19, status: active }
+  - { id: TR-stealth-006, system: stealth, gdd: design/gdd/stealth-system.md, requirement: "Fire OnDetectionChanged events on state transitions; fire OnStealthBroken on detection=100 to Combat System", created: 2026-05-19, status: active }
+  - { id: TR-stealth-007, system: stealth, gdd: design/gdd/stealth-system.md, requirement: "Read inputs from Movement (noise, visibility), Physics (surface, weather), Scene (zone infection, time of day), Camera (FOV), Health (injury) every frame", created: 2026-05-19, status: active }
+
+  # ============================================================
+  # COMBAT SYSTEM (design/gdd/combat-system.md)
+  # ============================================================
+  - { id: TR-combat-001, system: combat, gdd: design/gdd/combat-system.md, requirement: "4 weapon classes (Pistol, Shotgun, Rifle, Melee) with per-class fire rate, damage, magazine, ammo type", created: 2026-05-19, status: active }
+  - { id: TR-combat-002, system: combat, gdd: design/gdd/combat-system.md, requirement: "Player weapons use hitscan (line trace from camera with spread); alien attacks use projectiles with travel time", created: 2026-05-19, status: active }
+  - { id: TR-combat-003, system: combat, gdd: design/gdd/combat-system.md, requirement: "Damage formula multipliers (location, distance, weapon condition, alien armor); ceil result; min 1", created: 2026-05-19, status: active }
+  - { id: TR-combat-004, system: combat, gdd: design/gdd/combat-system.md, requirement: "Weapon condition tiers (Clean/Dirty/Damaged) affect damage and jam chance (5% dirty, 15% damaged+dirty); 2.0s jam clear", created: 2026-05-19, status: active }
+  - { id: TR-combat-005, system: combat, gdd: design/gdd/combat-system.md, requirement: "Combat Mode (ECombatState) triggers at detection =100 (Detected) OR player attacks alien OR patrol enters 1500cm — NOT at 75 (75 = alien combat behavior only, per unified combat-state model); disengage timer = 10 + 2 per alive alien − 3 if cover (7.0s–30.0s)", created: 2026-05-19, revised: 2026-05-21, status: active }
+  - { id: TR-combat-006, system: combat, gdd: design/gdd/combat-system.md, requirement: "Combat owns IMC_Combat pop decision (not Stealth System); FOV narrows to 65° on engage", created: 2026-05-19, status: active }
+  - { id: TR-combat-007, system: combat, gdd: design/gdd/combat-system.md, requirement: "Reload deducts ammo from reserve at start; interrupt by damage cancels but does not waste ammo (refund at start)", created: 2026-05-19, status: active }
+  - { id: TR-combat-008, system: combat, gdd: design/gdd/combat-system.md, requirement: "Combat VFX budget <0.5ms; max 20 bullet decals, 10 blood decals, 30 spent casings, 2 muzzle flash particles", created: 2026-05-19, status: active }
+  - { id: TR-combat-009, system: combat, gdd: design/gdd/combat-system.md, requirement: "Fire OnCombatEngaged, OnCombatDisengaged events; route AddRecoil to Camera System", created: 2026-05-19, status: active }
+
+  # ============================================================
+  # ALIEN AI (design/gdd/alien-ai-system.md)
+  # ============================================================
+  - { id: TR-ai-001, system: ai, gdd: design/gdd/alien-ai-system.md, requirement: "AAlienCharacter inherits ACharacter; AAlienAIController inherits AAIController; one controller per alien", created: 2026-05-19, status: active }
+  - { id: TR-ai-002, system: ai, gdd: design/gdd/alien-ai-system.md, requirement: "UAIPerceptionComponent on AAlienCharacter (not controller); 3 senses (UAISenseConfig_Sight, Hearing, Damage)", created: 2026-05-19, status: active }
+  - { id: TR-ai-003, system: ai, gdd: design/gdd/alien-ai-system.md, requirement: "Behavior Trees for AI logic; custom BT nodes in C++ for perf-critical paths (attack tasks); Blackboard component for state", created: 2026-05-19, status: active }
+  - { id: TR-ai-004, system: ai, gdd: design/gdd/alien-ai-system.md, requirement: "Custom BT node classes (UAlienBTService_DetectionDecay, UAlienBTService_UpdatePerception, UAlienBTDecorator_IsDetectionThreshold, UAlienBTTask_MeleeAttack/SpitAttack/ChargeAttack/BiomassBurst/FindPatrolLocation/MoveToCover)", created: 2026-05-19, status: active }
+  - { id: TR-ai-005, system: ai, gdd: design/gdd/alien-ai-system.md, requirement: "EQS queries (FindCover, FindFlankPosition, FindRetreatPosition, FindPatrolLocation); max 1 query per alien at a time; 0.1s timeout; result cached 2s; <50 points per query", created: 2026-05-19, status: active }
+  - { id: TR-ai-006, system: ai, gdd: design/gdd/alien-ai-system.md, requirement: "Custom Nav Areas (Default, Low/crouch, Biomass, Restricted); cell size 30cm, agent radius 50cm, max slope 45°", created: 2026-05-19, status: active }
+  - { id: TR-ai-007, system: ai, gdd: design/gdd/alien-ai-system.md, requirement: "Biomass Nav Areas painted at runtime via UNavSystem::ApplyRadiusModifier as infection spreads", created: 2026-05-19, status: active }
+  - { id: TR-ai-008, system: ai, gdd: design/gdd/alien-ai-system.md, requirement: "Event-driven squad system with shared Blackboard (UBlackboardData_SquadShared); UAlienManagerSubsystem (UGameInstanceSubsystem) for global coordination", created: 2026-05-19, status: active }
+  - { id: TR-ai-009, system: ai, gdd: design/gdd/alien-ai-system.md, requirement: "Per-alien total CPU <0.5ms (BT 0.15ms + Perception 0.05ms + EQS 0.10ms + Nav 0.10ms); max 8 aliens MVP, 20 PC high-end", created: 2026-05-19, status: active }
+  - { id: TR-ai-010, system: ai, gdd: design/gdd/alien-ai-system.md, requirement: "UAlienBTService_UpdatePerception writes DetectionScore to Blackboard every 0.5s; sets/clears bIsInCombat at thresholds", created: 2026-05-19, status: active }
+  - { id: TR-ai-011, system: ai, gdd: design/gdd/alien-ai-system.md, requirement: "Squad alert propagation with 1.5s delay; 1s debounce; distance filter 30m", created: 2026-05-19, status: active }
+  - { id: TR-ai-012, system: ai, gdd: design/gdd/alien-ai-system.md, requirement: "Sight Range 2000cm, LoseSight 2500cm, FOV 110° with peripheral hysteresis to prevent flickering", created: 2026-05-19, status: active }
+
+  # ============================================================
+  # INVESTIGATION (design/gdd/investigation-system.md)
+  # ============================================================
+  - { id: TR-investigation-001, system: investigation, gdd: design/gdd/investigation-system.md, requirement: "UInvestigationSubsystem (UGameInstanceSubsystem) tracks clue discovery and thread progression", created: 2026-05-19, status: active }
+  - { id: TR-investigation-002, system: investigation, gdd: design/gdd/investigation-system.md, requirement: "3 clue types (Physical, Environmental, Testimony); discovery is a one-time event per clue", created: 2026-05-19, status: active }
+  - { id: TR-investigation-003, system: investigation, gdd: design/gdd/investigation-system.md, requirement: "Clue data stored in Data Tables; 12-field FClueData struct (ClueId, Type, ThreadId, SecondaryThreads, Content, WorldLocation, TriggerRadius, AnomalyDirection, Gates, IsOptional, DialogueNodeId)", created: 2026-05-19, status: active }
+  - { id: TR-investigation-004, system: investigation, gdd: design/gdd/investigation-system.md, requirement: "Thread states: Unknown → Suspected → Confirmed → Revelation (pending) → Revealed; revelation deferred until safe moment", created: 2026-05-19, status: active }
+  - { id: TR-investigation-005, system: investigation, gdd: design/gdd/investigation-system.md, requirement: "Environmental observation requires 2s gaze hold within 30° of anomaly; stealth gate cancels observation if detection ≥25", created: 2026-05-19, status: active }
+  - { id: TR-investigation-006, system: investigation, gdd: design/gdd/investigation-system.md, requirement: "Revelation deferral poll 5.0s; deliver when not in combat, detection <25, not in dialogue, not loading", created: 2026-05-19, status: active }
+  - { id: TR-investigation-007, system: investigation, gdd: design/gdd/investigation-system.md, requirement: "Persist investigation state via SaveInvestigationState/Restore", created: 2026-05-19, status: active }
+  - { id: TR-investigation-008, system: investigation, gdd: design/gdd/investigation-system.md, requirement: "Fire OnClueDiscovered, OnThreadUpdated, OnRevelationUnlocked events", created: 2026-05-19, status: active }
+
+  # ============================================================
+  # HUD SYSTEM (design/gdd/hud-system.md)
+  # ============================================================
+  - { id: TR-hud-001, system: hud, gdd: design/gdd/hud-system.md, requirement: "Two HUD modes (Immersive/Tactical) selected in options; mode change queued and applied when not in combat", created: 2026-05-19, status: active }
+  - { id: TR-hud-002, system: hud, gdd: design/gdd/hud-system.md, requirement: "Two independent rendering pipelines (ImmersiveRenderer, TacticalRenderer) sharing a common data layer fed by subsystem events", created: 2026-05-19, status: active }
+  - { id: TR-hud-003, system: hud, gdd: design/gdd/hud-system.md, requirement: "UHUDSubsystem (UGameInstanceSubsystem) with subscriptions to Health/Combat/Stealth/Movement/Scene/PC/Combat/AlienAI/InfectionSpread events", created: 2026-05-19, status: active }
+  - { id: TR-hud-004, system: hud, gdd: design/gdd/hud-system.md, requirement: "Tactical HUD frame budget <0.5ms; minimap update <0.2ms with 10 threat dots", created: 2026-05-19, status: active }
+  - { id: TR-hud-005, system: hud, gdd: design/gdd/hud-system.md, requirement: "UMG Widgets for all HUD elements; resolution support 1080p/1440p/4K/ultrawide 21:9; 5% safe area margin", created: 2026-05-19, status: active }
+  - { id: TR-hud-006, system: hud, gdd: design/gdd/hud-system.md, requirement: "Minimap circular, radius 5000cm, player-facing rotation; threat dots 0.5s update; infection heatmap 10s update", created: 2026-05-19, status: active }
+  - { id: TR-hud-007, system: hud, gdd: design/gdd/hud-system.md, requirement: "Accessibility hooks: UI scale 80-150%; colorblind presets (Deuteranopia, Protanopia, Tritanopia); high contrast mode", created: 2026-05-19, status: active }
+  - { id: TR-hud-008, system: hud, gdd: design/gdd/hud-system.md, requirement: "HUD visibility per camera mode (e.g. all HUD hidden in scoped FirstPerson except crosshair+ammo)", created: 2026-05-19, status: active }
+  - { id: TR-hud-009, system: hud, gdd: design/gdd/hud-system.md, requirement: "Context prompts shared across both modes; max 2 simultaneous (1 primary + 1 secondary); fade 0.2s in / 0.15s out", created: 2026-05-19, status: active }
+
+  # ============================================================
+  # INVENTORY (design/gdd/inventory-system.md)
+  # ============================================================
+  - { id: TR-inventory-001, system: inventory, gdd: design/gdd/inventory-system.md, requirement: "UInventorySubsystem (UGameInstanceSubsystem); 5x4 base grid (20 slots, expandable 30); weight-based limit (50kg base, 70kg expanded)", created: 2026-05-19, status: active }
+  - { id: TR-inventory-002, system: inventory, gdd: design/gdd/inventory-system.md, requirement: "Item data stored in Data Tables (DT_Items) with 12-field FItem struct (Id, Name, Category, Weight, SlotW/H, MaxStack, etc.)", created: 2026-05-19, status: active }
+  - { id: TR-inventory-003, system: inventory, gdd: design/gdd/inventory-system.md, requirement: "6 item categories (Weapon, Ammo, Healing, Cure, Resource, Key Item) with category-specific stack rules", created: 2026-05-19, status: active }
+  - { id: TR-inventory-004, system: inventory, gdd: design/gdd/inventory-system.md, requirement: "2 dedicated weapon slots outside grid (primary + secondary); weight counts toward carry limit", created: 2026-05-19, status: active }
+  - { id: TR-inventory-005, system: inventory, gdd: design/gdd/inventory-system.md, requirement: "Ammo tracked per-type (not per-weapon); weight fixed at pickup time (not per-fire)", created: 2026-05-19, status: active }
+  - { id: TR-inventory-006, system: inventory, gdd: design/gdd/inventory-system.md, requirement: "First-fit top-left grid placement algorithm for auto-placement on pickup", created: 2026-05-19, status: active }
+  - { id: TR-inventory-007, system: inventory, gdd: design/gdd/inventory-system.md, requirement: "4 quick slots for consumables (1-4 keys / D-pad); reference inventory stacks", created: 2026-05-19, status: active }
+  - { id: TR-inventory-008, system: inventory, gdd: design/gdd/inventory-system.md, requirement: "Expose IInventorySubsystem (capacity queries, item mgmt, weapon mgmt, ammo mgmt, grid ops, events, Save/Restore)", created: 2026-05-19, status: active }
+  - { id: TR-inventory-009, system: inventory, gdd: design/gdd/inventory-system.md, requirement: "Inventory state mid-drag is not preserved on save/load (load restores closed state with item in last grid position)", created: 2026-05-19, status: active }
+
+  # ============================================================
+  # QUEST SYSTEM (design/gdd/quest-system.md)
+  # ============================================================
+  - { id: TR-quest-001, system: quest, gdd: design/gdd/quest-system.md, requirement: "Quest data in Data Tables (DT_Quests) with FQuestObjective nested struct; 2 quest tiers (CTQ, Survivor Contract)", created: 2026-05-19, status: active }
+  - { id: TR-quest-002, system: quest, gdd: design/gdd/quest-system.md, requirement: "Continuous objectives polled at 1.0Hz (configurable); event-driven objectives evaluated on event fire", created: 2026-05-19, status: active }
+  - { id: TR-quest-003, system: quest, gdd: design/gdd/quest-system.md, requirement: "Quest evaluation pauses during GSM Loading/Paused/Death and during Combat (deferred consequences)", created: 2026-05-19, status: active }
+  - { id: TR-quest-004, system: quest, gdd: design/gdd/quest-system.md, requirement: "Deferred consequence system stores T_complete + T_delay; evaluates against game time + condition flags", created: 2026-05-19, status: active }
+  - { id: TR-quest-005, system: quest, gdd: design/gdd/quest-system.md, requirement: "Persist quest state via SaveQuestState/Restore (includes active objectives, pending consequences, failed quests)", created: 2026-05-19, status: active }
+  - { id: TR-quest-006, system: quest, gdd: design/gdd/quest-system.md, requirement: "No hard cap on active contracts; HUD shows up to 3 active objectives per contract; full quest log via pause menu", created: 2026-05-19, status: active }
+
+  # ============================================================
+  # FACTION REPUTATION (design/gdd/faction-reputation-system.md)
+  # ============================================================
+  - { id: TR-faction-001, system: faction, gdd: design/gdd/faction-reputation-system.md, requirement: "Per-faction signed integer reputation -100 to +100; 7 standing tiers (Hunted, Hostile, Wary, Unknown, Known, Trusted, Allied)", created: 2026-05-19, status: active }
+  - { id: TR-faction-002, system: faction, gdd: design/gdd/faction-reputation-system.md, requirement: "Faction-Faction relationship matrix (Allied/Neutral/Rival/Hostile); ripple effects on rep changes", created: 2026-05-19, status: active }
+  - { id: TR-faction-003, system: faction, gdd: design/gdd/faction-reputation-system.md, requirement: "Faction-NPC bridge: faction reputation tier floors per-NPC Trust cap; Fear/Knowledge independent", created: 2026-05-19, status: active }
+  - { id: TR-faction-004, system: faction, gdd: design/gdd/faction-reputation-system.md, requirement: "Persist faction state via SaveFactionState/Restore (rep per faction, relationship matrix, immunity reveal flags)", created: 2026-05-19, status: active }
+  - { id: TR-faction-005, system: faction, gdd: design/gdd/faction-reputation-system.md, requirement: "Fire OnFactionReputationChanged(FactionId, NewValue, Delta, Reason) after each rep change", created: 2026-05-19, status: active }
+  - { id: TR-faction-006, system: faction, gdd: design/gdd/faction-reputation-system.md, requirement: "Combat state detection: any NPC with player in aggro pool OR player damaged in last 5s", created: 2026-05-19, status: active }
+  - { id: TR-faction-007, system: faction, gdd: design/gdd/faction-reputation-system.md, requirement: "On save corruption: default factions to Unknown (rep=0); preserve immunity reveal flags independently; default relationship matrix to authored state", created: 2026-05-19, status: active }
+
+  # ============================================================
+  # CRAFTING (design/gdd/crafting-system.md)
+  # ============================================================
+  - { id: TR-crafting-001, system: crafting, gdd: design/gdd/crafting-system.md, requirement: "2 craft modes (Field Craft, Workbench Craft) gated by proximity (200cm) and discovered schematics", created: 2026-05-19, status: active }
+  - { id: TR-crafting-002, system: crafting, gdd: design/gdd/crafting-system.md, requirement: "Schematics are world items; pickup permanently unlocks recipe and consumes schematic", created: 2026-05-19, status: active }
+  - { id: TR-crafting-003, system: crafting, gdd: design/gdd/crafting-system.md, requirement: "Recipes in Data Tables; resource consumption atomic at channel completion (not reserved during channel)", created: 2026-05-19, status: active }
+  - { id: TR-crafting-004, system: crafting, gdd: design/gdd/crafting-system.md, requirement: "Field Craft 3.0s channel cancellable by damage or enemy detection; Workbench Craft 1.0s non-interruptible", created: 2026-05-19, status: active }
+  - { id: TR-crafting-005, system: crafting, gdd: design/gdd/crafting-system.md, requirement: "Inventory full at output step blocks craft and refunds resources (no consumption)", created: 2026-05-19, status: active }
+  - { id: TR-crafting-006, system: crafting, gdd: design/gdd/crafting-system.md, requirement: "Persist via SaveCraftingState/Restore (set of unlocked schematic IDs)", created: 2026-05-19, status: active }
+
+  # ============================================================
+  # MAP SYSTEM (design/gdd/map-system.md)
+  # ============================================================
+  - { id: TR-map-001, system: map, gdd: design/gdd/map-system.md, requirement: "Fog-of-war stored as per-zone bitmask; 500cm tile size default; revealed tiles persist across sessions", created: 2026-05-19, status: active }
+  - { id: TR-map-002, system: map, gdd: design/gdd/map-system.md, requirement: "World Map opens as sub-state of GSM Paused (pauses world); Minimap is HUD toggle (off by default, not persisted across sessions)", created: 2026-05-19, status: active }
+  - { id: TR-map-003, system: map, gdd: design/gdd/map-system.md, requirement: "Automatic location pinning on trigger volume entry (safehouse, workbench, investigation site, infection zone)", created: 2026-05-19, status: active }
+  - { id: TR-map-004, system: map, gdd: design/gdd/map-system.md, requirement: "Manual marker cap 10 (MaxManualMarkers); persisted across sessions", created: 2026-05-19, status: active }
+  - { id: TR-map-005, system: map, gdd: design/gdd/map-system.md, requirement: "No fast travel at MVP; IA_Map opens for reference only", created: 2026-05-19, status: active }
+  - { id: TR-map-006, system: map, gdd: design/gdd/map-system.md, requirement: "Persist via SaveMapState/Restore (fog bitmask, auto-pins, manual markers)", created: 2026-05-19, status: active }
+  - { id: TR-map-007, system: map, gdd: design/gdd/map-system.md, requirement: "Fog reveal applied per frame in Playing state with bitmask short-circuit before distance test", created: 2026-05-19, status: active }
+
+  # ============================================================
+  # SAVE/LOAD (design/gdd/save-load-system.md)
+  # ============================================================
+  - { id: TR-save-001, system: save, gdd: design/gdd/save-load-system.md, requirement: "Single save slot per platform user profile; no manual save; auto-save on zone entry, key investigation events, clean exit", created: 2026-05-19, status: active }
+  - { id: TR-save-002, system: save, gdd: design/gdd/save-load-system.md, requirement: "Serialise as USaveGame via UGameplayStatics::SaveGameToSlot(\"HostileWorldSave_Slot0\"); async write; OnSaveComplete delegate", created: 2026-05-19, status: active }
+  - { id: TR-save-003, system: save, gdd: design/gdd/save-load-system.md, requirement: "Save suppressed during GSM Cutscene and GameOver", created: 2026-05-19, status: active }
+  - { id: TR-save-004, system: save, gdd: design/gdd/save-load-system.md, requirement: "Load only during GSM Loading state; deserialise and distribute to subsystem Restore interfaces", created: 2026-05-19, status: active }
+  - { id: TR-save-005, system: save, gdd: design/gdd/save-load-system.md, requirement: "Corruption handling: log error, delete corrupted file, fall back to new-game defaults, show HUD notification; do not crash", created: 2026-05-19, status: active }
+  - { id: TR-save-006, system: save, gdd: design/gdd/save-load-system.md, requirement: "Save indicator UMG element (corner-placed, 2.0s, fade 0.3s); non-blocking; never pauses game", created: 2026-05-19, status: active }
+  - { id: TR-save-007, system: save, gdd: design/gdd/save-load-system.md, requirement: "Save/Load mutually exclusive; load queued behind active save write", created: 2026-05-19, status: active }
+  - { id: TR-save-008, system: save, gdd: design/gdd/save-load-system.md, requirement: "Save payload captures: Player Transform, Health, Inventory, Crafting, Infection, Faction, Investigation, World Flags, Map, GSM state", created: 2026-05-19, status: active }
+  - { id: TR-save-009, system: save, gdd: design/gdd/save-load-system.md, requirement: "Clean-exit save is blocking write before process terminates", created: 2026-05-19, status: active }
+  - { id: TR-save-010, system: save, gdd: design/gdd/save-load-system.md, requirement: "Checkpoint cooldown 30s (configurable) to prevent save spam at rapid zone boundary crossings", created: 2026-05-19, status: active }
+  - { id: TR-save-011, system: save, gdd: design/gdd/save-load-system.md, requirement: "Storage-full handling: log, show HUD notification, preserve existing save (do not delete on failed write)", created: 2026-05-19, status: active }
+
+  # ============================================================
+  # TUTORIAL SYSTEM (design/gdd/tutorial-system.md)
+  # ============================================================
+  - { id: TR-tutorial-001, system: tutorial, gdd: design/gdd/tutorial-system.md, requirement: "Tutorial operates as overlay within GSM Playing state only; no Tutorial GSM state added", created: 2026-05-19, status: active }
+  - { id: TR-tutorial-002, system: tutorial, gdd: design/gdd/tutorial-system.md, requirement: "Two-stage activation: Stage 1 trigger volume overlap → PENDING; Stage 2 first-time action → COMPLETE; cannot skip Stage 1", created: 2026-05-19, status: active }
+  - { id: TR-tutorial-003, system: tutorial, gdd: design/gdd/tutorial-system.md, requirement: "5 hint states (INACTIVE, PENDING, ACTIVE, COMPLETE, MUTED) with deterministic transition table; COMPLETE terminal", created: 2026-05-19, revised: 2026-05-20, status: active }
+  - { id: TR-tutorial-004, system: tutorial, gdd: design/gdd/tutorial-system.md, requirement: "World-space callout via UWidgetComponent on the world actor; no HUD elements, no screen-space prompts", created: 2026-05-19, status: active }
+  - { id: TR-tutorial-005, system: tutorial, gdd: design/gdd/tutorial-system.md, requirement: "Subscribe to GSM OnStateEntered/OnStateExited; non-Playing states mute all PENDING hints; return to Playing restores", created: 2026-05-19, status: active }
+  - { id: TR-tutorial-006, system: tutorial, gdd: design/gdd/tutorial-system.md, requirement: "Persist FTutorialSaveData (set of completed HintIDs) via Save/Load; terminal hints skip trigger registration on load", created: 2026-05-19, revised: 2026-05-20, status: active }
+  - { id: TR-tutorial-007, system: tutorial, gdd: design/gdd/tutorial-system.md, requirement: "Observe IMC_Default actions for first-time-action detection; Tutorial never consumes input", created: 2026-05-19, status: active }
+  - { id: TR-tutorial-008, system: tutorial, gdd: design/gdd/tutorial-system.md, requirement: "bTutorialEnabled global toggle takes effect immediately; PENDING hints hold position invisibly when off and reappear on re-enable", created: 2026-05-19, status: active }
+  - { id: TR-tutorial-009, system: tutorial, gdd: design/gdd/tutorial-system.md, requirement: "Max concurrent active hints N_max=2; excess queued by priority P_hint = 0.70/D_player + 0.30/SEQ_idx; tie-break lower SEQ_idx then HintID alpha", created: 2026-05-19, status: active }
+  - { id: TR-tutorial-010, system: tutorial, gdd: design/gdd/tutorial-system.md, requirement: "Trigger sphere radius R_trigger = clamp((R_obj × 3.0) × M_density, 150, 500) cm with M_density = 1.0/0.75/0.55 (Open/Medium/Dense)", created: 2026-05-19, status: active }
+  - { id: TR-tutorial-011, system: tutorial, gdd: design/gdd/tutorial-system.md, requirement: "UnlockCondition (zone tag, quest flag, or mechanic flag) gates trigger-volume registration for progressive hints", created: 2026-05-19, status: active }

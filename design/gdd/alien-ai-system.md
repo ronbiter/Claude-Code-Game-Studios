@@ -149,7 +149,7 @@ Root
 | `TargetActor` | Object | Current target (player) | Perception Service |
 | `TargetLocation` | Vector | Last known player position | Perception Service |
 | `DetectionScore` | Float | 0–100 detection value | UpdatePerception Service |
-| `bIsInCombat` | Bool | Has detection hit Combat threshold (≥75)? | Set by `UAlienBTService_UpdatePerception` when `DetectionScore >= 75`. Cleared when `DetectionScore < 50` (after 3s decay). This bool gates the Combat Branch decorator — when true, the BT prioritizes attack/retreat tasks over investigation or patrol. |
+| `bIsInCombat` | Bool | Alien combat behavior active (detection ≥75)? | Set by `UAlienBTService_UpdatePerception` when `DetectionScore >= 75`. Cleared when `DetectionScore < 50` (after 3s decay). This bool gates the **alien's** Combat Branch decorator — when true, the BT prioritizes attack/retreat over investigation or patrol. It also backs the cross-system `IsPlayerUnderThreat()` narrative gate (≥75). It is NOT the player's Combat Mode — that is `ECombatState`/IMC_Combat, owned by Combat System and active only at Detected (100). |
 | `bIsPlayerVisible` | Bool | Direct line of sight | Perception Service |
 | `DistanceToPlayer` | Float | Distance to target | BT Service (every 0.25s) |
 | `PatrolRoute` | Object | Waypoint array | Init on BeginPlay |
@@ -210,7 +210,7 @@ AAlienAIController
 1. **Squad Blackboard**: Shared `UBlackboardData_SquadShared` contains `SquadTargetLocation`, `SquadAlertLevel` (max detection in squad), `bSquadEngaged`.
 2. **Event Dispatchers**: When alien detects player → `OnSquadAlerted.Broadcast(this, TargetLocation, DetectionScore)`.
 3. **Squad Leader**: One alien per squad (first spawned) makes tactical decisions, broadcasts orders via `OnSquadOrder` delegate.
-4. **UAlienManagerSubsystem** (UGameInstanceSubsystem): Global coordination — `GetAllActiveAliens()`, `GetSquadById()`, `NotifyPlayerPosition()`, `RegisterAlien()`.
+4. **UAlienSquadSubsystem** (UWorldSubsystem — per ADR-0012): World-scoped coordination — `GetAllActiveAliens()`, `GetSquadById()`, `NotifyPlayerPosition()`, `RegisterAlien()`, `BroadcastSquadAlert()`. Auto-clears on level transition; no cross-zone alien persistence by design.
 
 **Alert propagation formula:**
 `S_alert = clamp(A_base × (1 - (d/2000)²) × M_terrain × M_infection, 0, 100)`
@@ -240,7 +240,7 @@ EQS performance: Max 1 query per alien at a time. Timeout 0.1s. Results cached 2
 | Biomass (custom) | 0.5x | Biomass zones (aliens faster) | Green |
 | Restricted (custom) | ∞ (blocked) | No-go zones (cliffs, water) | Red |
 
-Biomass Nav Areas painted at runtime via `UNavSystem::ApplyRadiusModifier` when infection spreads. Cell size 30cm. Agent radius 50cm. Max slope 45°. Dynamic obstacles: player and other aliens registered as `UNavTest` with `ENavDataGatheringMode::Dynamic`.
+Biomass Nav Areas painted at runtime via `UNavModifierComponent` on pooled actors spawned by `UInfectionSpreadSubsystem` (see ADR-0012). Note: `UNavSystem` does not exist in UE5 — correct class is `UNavigationSystemV1`; use it for path queries, not for area painting. Cell size 30cm. Agent radius 50cm. Max slope 45°. Dynamic obstacles: player and other aliens registered as `UNavTest` with `ENavDataGatheringMode::Dynamic`.
 
 **Rule 10 — Infection-Aware Behavior (Provisional)**
 
@@ -254,7 +254,7 @@ Zone infection level (0–100) scales alien behavior:
 | Alert propagation | +0.5 | +50% alert strength |
 | Attack cooldown reduction | -0.2 | -20% cooldowns (spit 3.0→2.4s) |
 
-Provisional — values tuned during playtesting. Contract with Infection Spread System: `ISceneManagement::GetZoneInfectionLevel(ZoneId)` returns 0–100.
+Provisional — values tuned during playtesting. Contract with Infection Spread System: `IInfectionSpreadSubsystem::GetZoneInfectionLevel(ZoneId)` returns 0–100.
 
 ### States and Transitions
 
@@ -263,14 +263,14 @@ Provisional — values tuned during playtesting. Contract with Infection Spread 
 | **Idle/Patrol** | 0–24 | Game start, or detection decayed below 25 | Detection ≥ 25 OR alert received | Patrol Branch | Patrol waypoints, wait 2–5s, scan environment |
 | **Suspicious** | 25–49 | Detection ≥ 25 OR alert from squad member | Detection < 25 for 5.0s OR detection ≥ 50 | Suspicious Branch | Move to last known player position, play "look around" animation, listen for stimuli |
 | **Alert** | 50–74 | Detection ≥ 50 | Detection < 50 for 3.0s OR detection ≥ 75 | Alert Branch | EQS flank query, move to flanking position, scan with wider FOV |
-| **Combat** | 75–99 | Detection ≥ 75 | Player breaks LOS + undetected 10.0s OR all aliens dead | Combat Branch | Attack selection via scoring. Melee, spit, charge, or biomass burst. Squad converges. |
-| **Detected** | 100 | Detection = 100 | Player breaks LOS + undetected 10.0s OR all aliens dead | Combat Branch | Same as Combat. Full engagement — no de-escalation until LOS broken. |
+| **Combat** | 75–99 | Detection ≥ 75 | Combat System signals disengage (`OnCombatDisengaged()`, per `T_disengage` Formula 3) OR all aliens dead | Combat Branch | Attack selection via scoring. Melee, spit, charge, or biomass burst. Squad converges. |
+| **Detected** | 100 | Detection = 100 | Combat System signals disengage (`OnCombatDisengaged()`, per `T_disengage` Formula 3) OR all aliens dead | Combat Branch | Same as Combat. Full engagement — no de-escalation until LOS broken. |
 
 **State transition audio cues (player-facing):**
 - Idle → Suspicious: Alien stops patrol audio, emits low click/hiss (-18dB).
 - Suspicious → Alert: Rapid clicking increases (-14dB), movement speed increases.
 - Alert → Combat: Aggressive vocalization (-10dB), sprint animation begins.
-- Combat → Idle: All combat audio ceases. Alien returns to patrol route after 5.0s cooldown.
+- Combat → Idle: All combat audio ceases. The 5.0s return-to-patrol cooldown is layered *after* Combat System signals disengage (`T_disengage`, Formula 3) — it is a post-disengage settle delay, not a competing combat-end timer.
 
 ### Interactions with Other Systems
 
@@ -287,8 +287,8 @@ Provisional — values tuned during playtesting. Contract with Infection Spread 
 | **Audio System** | Writes | Alien vocalizations, combat audio, alert sounds | Alien fires audio events per state change. |
 | **Animation System** | Writes | Alien animation state, attack montages | Alien plays patrol, investigate, attack, and death animations. |
 | **HUD System** | Writes | Threat direction indicators (tactical mode) | HUD reads alien positions for threat dots. |
-| **Investigation System** | Reads | Combat state for clue accessibility | Investigation System checks `bIsInCombat` — some clues inaccessible during combat. |
-| **Infection Spread System** (Provisional) | Reads | Zone infection level (0–100) | `ISceneManagement::GetZoneInfectionLevel()` — scales alien behavior per Rule 10. |
+| **Investigation System** | Reads | Threat state for clue accessibility | Investigation System checks `IsPlayerUnderThreat()` (detection ≥75) — some clues inaccessible and revelations deferred while the player is under threat. |
+| **Infection Spread System** (Provisional) | Reads | Zone infection level (0–100) | `IInfectionSpreadSubsystem::GetZoneInfectionLevel()` — scales alien behavior per Rule 10. |
 
 ## Formulas
 
@@ -447,7 +447,7 @@ The `patrol_point_score` formula determines the Drone's next patrol destination:
 |--------|---------------|-------------------|
 | Stealth System | Detection score, P_hearing, P_vision | Reads alien perception params for D_total calculation |
 | Combat System | Alien health, attack execution, OnAlienKilled() | Receives alien death events, alien attack damage calls |
-| Investigation System | bIsInCombat flag | Some clues inaccessible during combat |
+| Investigation System | `IsPlayerUnderThreat()` (≥75) | Some clues inaccessible / revelations deferred while under threat |
 | Scene Management | Zone infection level | Infection-aware behavior scaling |
 | HUD System | Alien positions | Threat direction indicators (tactical mode) |
 

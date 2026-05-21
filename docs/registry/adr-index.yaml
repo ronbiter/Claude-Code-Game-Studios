@@ -1,0 +1,115 @@
+# Architecture Decision Index — lightweight pointer registry. Load domain files on demand, not by default.
+#
+# USAGE:
+#   Default: load THIS FILE only.
+#   Load domain files (adr-communication.yaml, adr-subsystems.yaml, adr-data.yaml,
+#   adr-input.yaml, adr-rendering.yaml) ONLY when actively working on that domain.
+#   Never load all domain files at once unless doing a cross-domain audit.
+#
+# WRITTEN BY: /architecture-decision (Phase 5 — after ADR is approved)
+# READ BY:    /architecture-decision (Step 2 — before authoring begins, index only)
+#             /architecture-review (Phase 4 — load all domain files for full audit)
+#             /create-stories (index only — load domain file if story touches that domain)
+#             /dev-story (index only — load domain file for the story's domain)
+
+version: 1
+last_updated: "2026-05-20"
+
+adrs:
+  - id: ADR-0001
+    title: Cross-System Communication
+    domain: communication
+    status: active
+    adr_file: docs/architecture/adr-0001-cross-system-communication.md
+    registry_file: docs/registry/adr-communication.yaml
+
+  - id: ADR-0002
+    title: Game State Machine Implementation
+    domain: subsystems
+    status: active
+    adr_file: docs/architecture/adr-0002-game-state-machine-implementation.md
+    registry_file: docs/registry/adr-subsystems.yaml
+
+  - id: ADR-0003
+    title: Enhanced Input Architecture
+    domain: input
+    status: active
+    adr_file: docs/architecture/adr-0003-enhanced-input-architecture.md
+    registry_file: docs/registry/adr-input.yaml
+
+  - id: ADR-0004
+    title: Subsystem Module Architecture
+    domain: subsystems
+    status: active
+    adr_file: docs/architecture/adr-0004-subsystem-module-architecture.md
+    registry_file: docs/registry/adr-subsystems.yaml
+
+  - id: ADR-0005
+    title: Game Data Strategy
+    domain: data
+    status: active
+    adr_file: docs/architecture/adr-0005-game-data-strategy.md
+    registry_file: docs/registry/adr-data.yaml
+
+  - id: ADR-0006
+    title: Save/Load Serialization
+    domain: data
+    status: active
+    adr_file: docs/architecture/adr-0006-save-load-serialization.md
+    registry_file: docs/registry/adr-data.yaml
+
+  - id: ADR-0007
+    title: Physics and Collision Architecture
+    domain: rendering
+    status: active
+    adr_file: docs/architecture/adr-0007-physics-collision-architecture.md
+    registry_file: docs/registry/adr-rendering.yaml
+
+  - id: ADR-0008
+    title: Scene Streaming Architecture
+    domain: rendering
+    status: active
+    adr_file: docs/architecture/adr-0008-scene-streaming-architecture.md
+    registry_file: docs/registry/adr-rendering.yaml
+
+  - id: ADR-0009
+    title: Camera Architecture
+    domain: rendering
+    status: active
+    adr_file: docs/architecture/adr-0009-camera-architecture.md
+    registry_file: docs/registry/adr-rendering.yaml
+
+  - id: ADR-0010
+    title: Movement Architecture
+    domain: subsystems
+    status: active
+    adr_file: docs/architecture/adr-0010-movement-architecture.md
+    registry_file: docs/registry/adr-subsystems.yaml
+
+  - id: ADR-0011
+    title: Animation Architecture
+    domain: rendering
+    status: active
+    adr_file: docs/architecture/adr-0011-animation-architecture.md
+    registry_file: docs/registry/adr-rendering.yaml
+
+  - id: ADR-0012
+    title: Alien AI System
+    domain: subsystems
+    status: active
+    adr_file: docs/architecture/adr-0012-alien-ai-system.md
+    registry_file: docs/registry/adr-subsystems.yaml
+
+  - id: ADR-0013
+    title: Infection Spread Architecture
+    domain: subsystems
+    status: active
+    adr_file: docs/architecture/adr-0013-infection-spread-architecture.md
+    registry_file: docs/registry/adr-subsystems.yaml
+
+  - id: ADR-0014
+    title: Combat System Architecture
+    domain: subsystems
+    status: active
+    adr_file: docs/architecture/adr-0014-combat-system-architecture.md
+    registry_file: docs/registry/adr-subsystems.yaml

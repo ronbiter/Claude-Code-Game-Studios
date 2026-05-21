@@ -1,0 +1,95 @@
+# Domain: communication | Load this file only when working on communication architecture decisions.
+#
+# Covers: cross-system communication, event bus, dynamic multicast delegates,
+# gameplay message router, interfaces, messaging patterns.
+#
+# ADRs in this domain: ADR-0001
+
+version: 1
+last_updated: "2026-05-20"
+
+# ─── STATE OWNERSHIP ─────────────────────────────────────────────────────────
+
+state_ownership: []
+# No communication-specific state ownership entries.
+# State ownership for game_state_machine_stack → adr-subsystems.yaml
+# State ownership for active_input_mapping_contexts → adr-input.yaml
+
+# ─── INTERFACE CONTRACTS ──────────────────────────────────────────────────────
+
+interfaces:
+  - contract: inter_system_events
+    status: active
+    pattern: dynamic_multicast_delegate
+    description: "Owner→subscriber events. Producer declares DECLARE_DYNAMIC_MULTICAST_DELEGATE; consumers AddDynamic() in BeginPlay(), RemoveDynamic() in EndPlay()."
+    adr: docs/architecture/adr-0001-cross-system-communication.md
+    referenced_by:
+      - docs/architecture/adr-0001-cross-system-communication.md
+    added: "2026-05-15"
+    revised: ""
+
+  - contract: global_broadcast_events
+    status: active
+    pattern: gameplay_message_router
+    description: "Global 1-to-many events where consumers are unknown at authoring time. Broadcast via UGameplayMessageSubsystem::BroadcastMessage<T>(); listen via RegisterListener<T>(). Handle must be member field, not local variable."
+    producer: any system
+    consumers: []
+    adr: docs/architecture/adr-0001-cross-system-communication.md
+    module_required: "GameplayMessageRuntime (Build.cs) + GameplayMessageRouter plugin (.uproject)"
+    referenced_by:
+      - docs/architecture/adr-0001-cross-system-communication.md
+    added: "2026-05-15"
+    revised: ""
+
+# ─── PERFORMANCE BUDGETS ──────────────────────────────────────────────────────
+
+performance_budgets: []
+
+# ─── API DECISIONS ───────────────────────────────────────────────────────────
+
+api_decisions:
+  - purpose: inter_system_communication_owner_subscriber
+    status: active
+    api: DECLARE_DYNAMIC_MULTICAST_DELEGATE + AddDynamic/RemoveDynamic
+    not: "Direct function calls, raw function pointers, Blueprint Event Dispatchers (for C++ core systems)"
+    adr: docs/architecture/adr-0001-cross-system-communication.md
+    reason: "Type-safe, Blueprint-accessible, UE reflection-compatible. Established pattern for owner→subscriber events."
+    referenced_by:
+      - docs/architecture/adr-0001-cross-system-communication.md
+    added: "2026-05-15"
+    revised: ""
+
+  - purpose: global_broadcast_communication
+    status: active
+    api: UGameplayMessageSubsystem (GameplayMessageRuntime module)
+    not: "Custom event bus singleton, stringly-typed message maps"
+    adr: docs/architecture/adr-0001-cross-system-communication.md
+    reason: "Engine-provided, tag-based, type-safe broadcast system. Use instead of custom infrastructure."
+    referenced_by:
+      - docs/architecture/adr-0001-cross-system-communication.md
+    added: "2026-05-15"
+    revised: ""
+
+# ─── FORBIDDEN PATTERNS ──────────────────────────────────────────────────────
+
+forbidden_patterns:
+  - pattern: polling_state_in_tick
+    status: active
+    description: "A Tick() function must not read another system's state to detect changes. Subscribe to the state change event instead."
+    why: "Polling creates hidden per-frame CPU overhead and breaks the event-driven architecture. Every system polling every other system at 60fps is unmaintainable."
+    adr: docs/architecture/adr-0001-cross-system-communication.md
+    added: "2026-05-15"
+
+  - pattern: direct_cross_system_state_write
+    status: active
+    description: "A system must never write to state owned by another system. Use method calls on the owning system instead."
+    why: "Direct state writes create race conditions, break state ownership, and make systems untestable in isolation."
+    adr: docs/architecture/adr-0001-cross-system-communication.md
+    added: "2026-05-15"
+
+  - pattern: blueprint_event_dispatchers_for_cpp_core
+    status: active
+    description: "Blueprint Event Dispatchers must not be used for C++ core system communication. Use DECLARE_DYNAMIC_MULTICAST_DELEGATE instead."
+    why: "BP dispatchers are not type-safe at the C++ boundary and create hidden coupling between C++ and Blueprint layers. Core system contracts must be defined in C++."
+    adr: docs/architecture/adr-0001-cross-system-communication.md
+    added: "2026-05-15"

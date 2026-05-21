@@ -1,9 +1,9 @@
 # Combat System
 
-> **Status**: Draft
+> **Status**: In Review (Revised ×2 — re-review required)
 > **Author**: user + agents
-> **Last Updated**: 29 April 2026
-> **Last Verified**: 29 April 2026
+> **Last Updated**: 2026-05-20
+> **Last Verified**: 2026-05-20
 > **Implements Pillar**: Pillar 1 (Hostile World), Pillar 3 (Tense Survival)
 
 ## Overview
@@ -40,11 +40,17 @@ The Combat System supports four weapon classes, each with distinct behavior, amm
 | Weapon Class | Fire Mode | Damage | Fire Rate | Effective Range | Ammo Type | Magazine |
 |-------------|-----------|--------|-----------|-----------------|-----------|----------|
 | **Pistol** | Semi-auto | 25 | 0.4s between shots | 0–1500cm | Pistol rounds | 12 |
-| **Shotgun** | Pump-action | 60 (all pellets) | 0.8s between shots | 0–500cm | Shotgun shells | 6 |
-| **Rifle** | Semi/Burst (3-round) | 18 per bullet | 0.15s between burst rounds | 0–3000cm | Rifle rounds | 30 |
+| **Shotgun** | Pump-action | 60 per pellet (9 pellets) | 0.8s between shots | 0–500cm | Shotgun shells | 6 |
+| **Rifle** | Burst (3-round, always) | 18 per bullet | 0.15s between burst rounds; new trigger press required per burst | 0–3000cm | Rifle rounds | 30 |
 | **Melee (Improvised)** | Single swing | 15 | 1.0s between swings | 0–150cm | N/A | N/A |
 
 **Weapon Acquisition**: Weapons are found in the world (abandoned military caches, dead soldiers, resistance stashes). No weapon vendors. No crafting weapons. Each weapon found comes with a partial magazine and zero reserve ammo — the player must scavenge ammo separately.
+
+**Weapon Role Differentiation** — each weapon is a distinct gamble, not a linear upgrade:
+- **Pistol**: quiet (noise radius 1000cm), accurate sustained fire (spread +0.2°/shot), common ammo. Best for stealth kills and precision engagements. No advantage in open firefights.
+- **Shotgun**: devastating up close (up to 540 damage point-blank), useless at range. A bet on the close-range kill before retreat.
+- **Rifle**: maximum effective range and per-burst damage — but **loud** (noise radius 2500cm, draws backup), **heavy spread climb** (+0.6°/shot, triple pistol rate), and **scarce ammo** (rare finds). Using the rifle ends area stealth and accelerates backup arrival.
+- **Melee**: silent, zero ammo cost. A last resort when ammo is dry or stealth kill is essential.
 
 **Weapon Switching**: Player switches weapons via IA_Inventory or quick slots. Switch time: 0.5s (pistol/rifle), 0.7s (shotgun). Cannot switch during reload or fire animation.
 
@@ -59,7 +65,16 @@ The Combat System supports four weapon classes, each with distinct behavior, amm
 | Rifle | ±0.8° | ±0.4° | ±1.5° | ±3.0° |
 | Melee | N/A (cone check) | N/A | N/A | N/A |
 
-**Spread increases with sustained fire**: Each consecutive shot within 1.0s adds +0.3° to spread (cumulative, max +5.0°). Spread resets to base after 1.0s of no firing.
+**Spread increases with sustained fire**: Each consecutive shot within 1.0s adds weapon-specific spread (`S_per_shot`): Pistol +0.2°, Rifle +0.6°. Shotgun has no accumulation between pump-action shots (9 pellets per shot, spread governed by the spread table). Cumulative cap: +5.0° maximum. Spread resets to base after 1.0s of no firing.
+
+**Noise propagation (stealth interaction)**: All weapon fire emits acoustic events.
+
+| Weapon | Noise Radius | Effect on Hidden/Suspicious/Alert aliens within radius |
+|--------|-------------|------------------------------------------------------|
+| Pistol | 1000cm | Transition to Alert state |
+| Shotgun | 1500cm | Transition to Alert state |
+| Rifle | 2500cm | Transition to Alert state; see Rule 8 (Call for Backup) |
+| Melee | 300cm | Transition to Suspicious state |
 
 **Alien attacks (projectile)**: Alien attacks use physical projectiles with travel time. This gives the player a visual cue and a chance to dodge.
 
@@ -81,13 +96,13 @@ Player damage is calculated per hit:
 | Base_damage | Per weapon (Rule 1) | Weapon's base damage value |
 | M_location | 1.0 (body), 1.5 (head), 0.7 (limb) | Hit location multiplier |
 | M_distance | 1.0 (within effective range), 0.5 (beyond effective range) | Distance falloff |
-| M_weapon_condition | 1.0 (clean), 0.8 (dirty), 0.6 (damaged) | Weapon condition from wear |
+| M_weapon_condition | float | 0.48–1.0 | Inventory System | Two independent variables: `IsDirty: bool` + `ConditionTier: Intact/Damaged`. M_condition = 1.0 (clean), 0.8 (dirty only), 0.6 (damaged only), 0.48 (dirty + damaged). See Weapon Jam edge case. |
 | M_alien_armor | 1.0 (unarmored), 0.6 (armored), 0.3 (heavily armored) | Per-alien armor value |
 
 **Example:** Pistol headshot on unarmored alien at effective range, clean weapon: 25 × 1.5 × 1.0 × 1.0 × 1.0 = **37.5 → 38 damage** (ceil).
 **Example:** Shotgun body hit on armored alien at 600cm (beyond effective range), dirty weapon: 60 × 1.0 × 0.5 × 0.8 × 0.6 = **14.4 → 15 damage** (ceil). Note: shotgun fires 9 pellets, so total = 15 × pellets that hit.
 
-**Alien damage to player**: Processed through Health System's damage pipeline (Health System Rule 3). Combat System calls `TakeDamage(amount, EDamageType.Physical)` on the player character.
+**Alien damage to player**: Processed through Health System's damage pipeline (Health System Rule 3). Combat System calls `TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)` on the player character, passing `FPointDamageEvent` as the `DamageEvent` argument (implicit upcast). `FPointDamageEvent` carries `FHitResult` (hit bone/location) required for M_location calculation.
 
 **Rule 4 — Ammo Management**
 
@@ -97,13 +112,15 @@ Ammo is a scarce resource. No infinite ammo, no regen, no crafting ammo.
 |-----------|-----------|----------|---------------------|
 | Pistol rounds | 60 | Military caches, dead soldiers | 6–12 |
 | Shotgun shells | 24 | Resistance stashes, hunter camps | 3–6 |
-| Rifle rounds | 120 | Military armories, supply caches | 10–20 |
+| Rifle rounds | 120 | Military armories, supply caches | 5–8 |
 
 **Reload Rules:**
 - Reload time: Pistol 1.5s, Shotgun 0.6s per shell (3.6s full), Rifle 2.0s (magazine swap), Melee N/A.
-- Reload can be cancelled 0.3s before completion (partial magazine inserted).
-- Reload interrupted by damage: reload cancels, partial ammo is NOT wasted (ammo deducted from reserve at start of reload).
-- Tactical reload (magazine not empty): 0.3s longer than standard reload (player must stow partial magazine).
+- Reload is cancelled by: taking damage, player input (sprint, dodge, weapon switch queue).
+- **Ammo deducted from reserve at reload START**: `actual_deduction = min(capacity - initial_mag_rounds, reserve); reserve -= actual_deduction`. If reserve is insufficient to fill the magazine, the reload proceeds with whatever ammo is available: `rounds_loaded = initial_mag_rounds + actual_deduction`. This prevents the reload-cancel-refarm exploit and guards against negative reserve.
+- **Partial fill on cancel**: `rounds_in_magazine = max(initial_mag_rounds, ceil((T_elapsed / T_reload_total) × capacity))`. Reserve refund on cancel: `reserve += (capacity - rounds_in_magazine)`. Example: cancel at 0.8s of 1.5s pistol reload, started with 5 rounds: `max(5, ceil(0.8/1.5 × 12)) = max(5, 7) = 7 rounds`. Reserve refund: `12 - 7 = 5 rounds returned`.
+- **Shotgun exception**: shells insert individually (one per 0.6s). Cancel mid-reload = only fully inserted shells count. No partial-shell credit.
+- Tactical reload (magazine not empty): +0.3s longer (player stows partial magazine). Stowed rounds are returned to reserve during the stow animation.
 - Empty reload: standard time. Animation includes slide-lock release (pistol/rifle) or bolt pull (shotgun).
 
 **Ammo UI (immersive mode)**: No ammo counter. Player checks ammo by pressing IA_Reload when not empty — character performs a "check magazine" animation (0.5s) and a small HUD element shows current magazine + reserve for 2.0s.
@@ -113,16 +130,16 @@ Ammo is a scarce resource. No infinite ammo, no regen, no crafting ammo.
 
 Combat follows a strict lifecycle:
 
-1. **Trigger**: Stealth System detection reaches 75 (Engaged state) OR player attacks an alien in Hidden/Suspicious state, OR alien patrol enters engagement range (1500cm) and detects player. Detection at 75 means "combat imminent" — IMC_Combat is pushed at this point. Detection at 100 means "full combat" — alien actively attacks.
-2. **Engagement**: IMC_Combat pushed. Combat music fades in. All nearby aliens transition to combat behavior.
+1. **Trigger**: Detection reaches **100** (Detected state in Stealth System) OR player attacks an alien in any state, OR alien patrol enters engagement range (1500cm) and detects player. Note: Detection=75 (Engaged state) causes the alien to aggressively search and close distance — but does NOT push IMC_Combat and does NOT start combat music. Music and combat engage only at 100. This preserves ambiguity: the player does not receive a warning signal before the alien attacks.
+2. **Engagement**: IMC_Combat pushed by Combat System. Combat music fades in. All nearby aliens transition to combat behavior.
 3. **Active Combat**: Player and aliens exchange damage. Combat persists as long as at least one alien is in combat state AND (within 2000cm of player OR has player in line of sight). Aliens beyond 2000cm that have lost LOS do not prevent disengagement.
-4. **Disengagement**: All aliens within 2000cm are dead OR all aliens have lost LOS and player has been undetected for 10.0s.
+4. **Disengagement**: All aliens within 2000cm are dead OR all aliens have lost LOS and the disengagement timer (Formula 3) has elapsed. Timer minimum is 7.0s (all dead, player in cover) and maximum is 30.0s. Rule 5 text references 10.0s as the base time (T_base) only — Formula 3 applies cover and alive-alien modifiers on top of it.
 5. **Cooldown**: IMC_Combat popped. Combat music fades out. Stealth System recalculates from zero (all aliens reset to Hidden unless memory persists).
 
 **Disengagement Rules:**
 - Dead aliens do not prevent disengagement.
 - Aliens that lost LOS but are still searching (Alert state) prevent disengagement.
-- Player must break LOS with ALL active combat aliens AND remain undetected for 10.0s to disengage.
+- Player must break LOS with ALL active combat aliens AND remain undetected for Formula 3's timer (min 7.0s with cover + all dead; max 30.0s) to disengage.
 - If a new alien enters engagement range during cooldown, combat re-engages immediately.
 
 **Rule 6 — Melee Combat**
@@ -136,39 +153,88 @@ Melee is a last-resort option. Improvised weapons (pipe, knife, rock) deal low d
 | Wind-up | 0.2s | Telegraphed — alien can react |
 | Recovery | 0.5s | Vulnerable window |
 | Stamina cost | 10 | Per swing |
-| Hit stun | 0.3s | Alien briefly staggered |
+| Hit stun | 0.15s | Alien briefly staggered. Shorter than player recovery (0.5s) — alien's 0.3s re-attack wind-up begins at 0.15s and completes at 0.45s, before player can re-swing at 0.5s. Prevents perpetual stun-lock. |
 | Consecutive hits | Each adds +0.2s recovery | Spamming melee gets slower |
 
+**Consecutive hit reset**: The +0.2s recovery penalty resets per-target (switching to a new alien clears the counter) AND after 3.0s of no melee input. Prevents the penalty from carrying across separate engagements. Does not reset on miss. **Counter is tracked as a `TMap<AlienID, HitCount>` on the Combat System.** Returning to a previously hit alien resets its counter to 0 — prior hits do not resume. (A→B→A: Alien A counter = 0 on return.)
+
+**Melee cone check implementation**: Implemented as sphere sweep (`SweepMultiByChannel`) at 150cm range + angle filter (`FVector::DotProduct > cos(30°)`) to test 60° arc. Not a UE5 primitive — requires this two-step trace.
+
 **Constraints**: Melee not available during Sprint (must decelerate first). Melee not available during Fall. Melee available in Cover (lean out + swing, 0.3s extra wind-up). Melee available in Crouch (lower damage: 10 instead of 15, shorter range: 100cm).
+
+### Rule 7 — Panic State
+
+When the player is under extreme stress, aim degrades. Panic is a spread modifier applied on top of Formula 2.
+
+| Condition | Panic Modifier (M_panic) | Trigger | Clear |
+|-----------|--------------------------|---------|-------|
+| HP ≤ 30% (Injured/Near-Death state) | +1.5° to S_current | HP drops to ≤ 30% | HP rises above 30% |
+| Any alien within 300cm | +1.0° to S_current | Any alien enters 300cm radius | All aliens exit 300cm radius |
+
+Both conditions are independent and stack. Maximum M_panic = +2.5° (both active simultaneously).
+
+**Design intent**: Panic enforces the survival fantasy mechanically. A wounded player cornered by an alien faces maximum aim degradation — the correct response is retreat, cover use, or a point-blank attack, not sustained mid-range fire.
+
+**Point-blank exemption**: M_panic spread modifiers (both M_panic_hp and M_panic_proximity) do NOT apply when the attack fires at ≤150cm (melee range) OR when a shotgun is within ≤150cm of its target. This preserves at least one reliable offensive option when the player is both injured and cornered — let the alien close, then point-blank shotgun or melee. The panic mechanic teaches retreat or commitment, not helplessness.
+
+### Rule 8 — Call for Backup
+
+Aliens in combat state call for reinforcements if not killed quickly. This delivers on the Player Fantasy promise: "Can I kill this before it calls for backup?"
+
+| Condition | Behavior | Player-Visible Signal | How to Prevent |
+|-----------|----------|----------------------|----------------|
+| Alien has unbroken LOS to player for ≥2.0s in combat | Emits backup call (2500cm radius) | Alien vocalization + brief body posture change | Kill alien within 2.0s of LOS |
+| Rifle shot fired within 2500cm of non-combat alien | Noise alert — alien transitions to Alert | None (environmental) | Use pistol or melee instead |
+
+**Backup response**: Aliens within 2500cm that receive a backup call or rifle noise alert transition from Hidden/Suspicious → Alert and move toward player's last known position. Alien AI System owns response behavior (squad mechanics, arrival timing). Combat System receives `OnBackupCalled(AlienID, Location)` event for threat indicator updates.
+
+**Audio — responding aliens**: Each alien within 2500cm that transitions to Alert on backup call emits a brief vocalization (staggered 0.1–0.3s apart to avoid a synchronised chorus). Audio System owns the cascading response event.
+
+**Disengaging suppression**: Backup calls are suppressed during the Disengaging state. An alien that regains LOS and holds it for ≥2.0s during Disengaging re-triggers Active Combat (Rule 5 re-trigger logic) but does NOT emit an additional backup call. The escape window is earned; it is not escalated further.
+
+**Design note**: The rifle's 2500cm noise radius creates the same propagation as an alien backup call. Firing the rifle ends area stealth permanently for the current engagement.
 
 ### States and Transitions
 
 | State | Entry Condition | Exit Condition | Behavior |
 |-------|----------------|----------------|----------|
-| **Non-Combat** | Game start, or disengagement complete | Combat triggered | Normal gameplay. IMC_Default or IMC_Stealth active. |
-| **Combat Entry** | Combat triggered | 0.5s elapsed | IMC_Combat pushed immediately (not delayed). Combat music fades in over 0.5s. Camera FOV narrows to 65°. Player can act during entry window. |
+| **Non-Combat** | Game start, or Disengaged complete | Detection=100, player attacks alien, or patrol enters 1500cm range | Normal gameplay. IMC_Default or IMC_Stealth active. |
+| **Combat Entry** | Combat triggered | 0.5s elapsed | Combat System calls `PC->PushCombatIMC()` which invokes `AddMappingContext(IMC_Combat)`. Combat System is the decision-maker; PC owns the subsystem access. Combat music fades in over 0.5s. Camera FOV narrows to 65°. Player can act during entry window. |
 | **Active Combat** | Combat Entry complete | Disengagement conditions met | Full combat behavior. Aliens attack. Player can fight or flee. |
-| **Disengaging** | All aliens dead OR all lost LOS | 10.0s undetected | IMC_Combat still active. Combat music fades. Player must stay hidden. If Stealth System de-escalates to Alert (detection <75), IMC_Combat remains until full disengagement — Combat System owns the IMC pop decision. |
-| **Disengaged** | 10.0s undetected | New combat trigger | IMC_Combat popped. Stealth System resets. Combat music off. |
+| **Disengaging** | All aliens dead OR all lost LOS | `T_disengage` (Formula 3: 7.0s–30.0s) elapsed AND no alien detects player. **Re-trigger: if any alien detects player during Disengaging → immediately back to Active Combat (timer resets to zero, no partial progress).** | IMC_Combat still active. Combat music fades. Player must stay hidden. Combat System owns the IMC pop decision — Stealth System de-escalation does NOT pop IMC_Combat. |
+| **Disengaged** | Formula 3 timer elapses (7.0s–30.0s depending on cover and alive aliens) | Same triggers as Non-Combat: detection=100, player attacks alien, patrol enters 1500cm range | Combat System calls `PC->PopCombatIMC()` which invokes `RemoveMappingContext(IMC_Combat)`. Stealth System resets. Combat music off. |
 
 **State Priority:** Active Combat > Disengaging > Combat Entry > Non-Combat
+
+**IMC_Combat ownership**: Combat System is the sole owner of IMC_Combat push and pop. It delegates the actual subsystem call to Player Controller via `PC->PushCombatIMC()` and `PC->PopCombatIMC()`, which invoke `UEnhancedInputLocalPlayerSubsystem::AddMappingContext` / `RemoveMappingContext`. Player Controller owns the `LocalPlayer` reference needed for subsystem access. A single push + single pop from one owning system (Combat System) prevents stack corruption; PC is the API bridge, not the decision-maker.
+
+**Unified combat-state model (canonical — three distinct concepts):** The word "combat" spans three independently-owned signals that must not be conflated:
+
+| Concept | Threshold | Owner | What it drives |
+|---------|-----------|-------|----------------|
+| **Alien combat behavior** | detection **≥75** (Engaged) | Alien AI (Combat Branch) | Aliens attack, converge, call backup. NOT a player-facing combat signal. |
+| **Player Combat Mode** (`ECombatState`, IMC_Combat, combat music, 65° FOV) | detection **=100** (Detected), or player attacks an alien, or patrol forces combat per Rule 5 | **Combat System** | The player's combat input context + audiovisual state. Pushed at 100 only — never at 75. This preserves the "no warning before the alien attacks" ambiguity (Pillar 3, Tense Survival). |
+| **`IsPlayerUnderThreat()`** (narrative-defer gate) | detection **≥75** | Stealth/Alien AI expose; Investigation/Quest/Faction consume | Suppresses revelations, quest-consequence delivery, and faction toasts while the player is being actively hunted (Pillar 2, Earned Discovery). Distinct from `ECombatState` — a revelation must not fire at detection 80 even though Combat Mode (=100) is not yet active. |
+
+Stealth System and Alien AI do **not** push or pop IMC_Combat at any threshold. Combat Mode entry/exit is governed solely by this system's state machine above; combat exit is governed solely by `T_disengage` (Formula 3), which Alien AI and Stealth reference rather than re-defining.
 
 ### Interactions with Other Systems
 
 | System | Direction | Data Flow | Interface |
 |--------|-----------|-----------|-----------|
-| **Player Controller** | Reads + Writes | IMC_Combat push/pop, input routing | `OnCombatEngaged()`, `OnCombatDisengaged()`, PC pushes IMC_Combat |
-| **Health System** | Reads + Writes | Damage to player, damage from player | `TakeDamage(float, EDamageType)`, `OnPlayerDamaged()` |
+| **Player Controller** | Reads + Writes | Input routing; receives combat state events | `OnCombatEngaged()` (event received), `OnCombatDisengaged()` (event received). PC does NOT push/pop IMC_Combat — Combat System owns the IMC stack. |
+| **Health System** | Reads + Writes | Damage to player, damage from player | `TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)` — pass `FPointDamageEvent` as `DamageEvent`. `OnPlayerDamaged()` |
 | **Movement System** | Reads | Dodge i-frames, movement state, stamina | `OnDodgeStarted/Ended()`, `GetCurrentMovementState()`, `GetStamina()` |
 | **Stealth System** | Reads + Writes | Detection state, stealth broken event | `OnStealthBroken()`, `GetCurrentDetectionLevel()`, `OnCombatDisengaged()` |
-| **Alien AI System** | Reads + Writes | Alien combat behavior, alien health | `SetAlienCombatState(AlienID, bool)`, `GetAlienHealth(AlienID)`, `OnAlienKilled()` |
+| **Alien AI System** | Reads + Writes | Alien combat behavior, health, LOS state, backup | `SetAlienCombatState(AlienID, bool)`, `GetAlienHealth(AlienID)`, `OnAlienKilled()`, `OnAlienLOSLost(AlienID)`, `OnAlienLOSRegained(AlienID)`, `OnBackupCalled(AlienID, Location)` |
 | **Inventory System** | Reads + Writes | Weapon data, ammo counts, weapon switching | `GetCurrentWeapon()`, `GetAmmoCount(AmmoType)`, `ConsumeAmmo()`, `SwitchWeapon()` |
-| **Camera System** | Reads + Writes | Recoil shake, FOV changes, camera mode | `AddRecoil(Amplitude, Duration)`, `SetFOV(65°)` during combat |
+| **Camera System** | Reads + Writes | Recoil shake, FOV changes, camera mode | `AddRecoil(Amplitude, Duration)`, `SetFOV(float)` (Camera System owns smooth FOV interpolation) |
 | **HUD System** | Writes | Combat indicators, ammo display, threat direction | `SetCombatState(ECombatState)`, `ShowAmmoCount()`, `ShowThreatIndicators()` |
 | **Audio System** | Writes | Combat music, weapon SFX, alien combat audio | `PlayWeaponFire(WeaponType)`, `StartCombatMusic()`, `StopCombatMusic()` |
-| **Animation System** | Writes | Fire animations, reload animations, melee montages | `PlayFireMontage(WeaponType)`, `PlayReloadMontage()`, `PlayMeleeMontage()` |
-| **Physics System** | Reads | Surface type (for bullet impact VFX), collision | `GetSurfaceTypeAtLocation()` |
+| **Animation System** | Writes | Fire animations, reload animations, melee montages | `PlayFireMontage(WeaponType)` (dedicated slot per weapon class), `PlayReloadMontage()`, `PlayMeleeMontage()`, `PlayJamClearMontage()` (dedicated jam slot — unskippable, higher blend weight) |
 | **Scene Management** | Reads | Zone state (for combat music mixing) | `GetCurrentZone()` |
+
+**Physics/Surface note**: Surface type for bullet impact VFX is read from the `FHitResult::PhysMaterial` returned by the hitscan trace already performed in Rule 2. No separate Physics System call is required.
 
 ## Formulas
 
@@ -185,12 +251,12 @@ The `damage_per_hit` formula is defined as:
 | Base damage | D_base | float | 15–60 | Weapon data (Rule 1) | Weapon's base damage per hit |
 | Location multiplier | M_loc | float | 0.7, 1.0, 1.5 | Hit detection | Head=1.5, Body=1.0, Limb=0.7 |
 | Distance multiplier | M_dist | float | 0.5–1.0 | Calculated | 1.0 within effective range, 0.5 beyond |
-| Weapon condition | M_condition | float | 0.6–1.0 | Inventory System | Clean=1.0, Dirty=0.8, Damaged=0.6 |
+| Weapon condition | M_condition | float | 0.48–1.0 | Inventory System | Two vars: `IsDirty: bool` + `ConditionTier: Intact/Damaged`. Values: Clean=1.0, Dirty=0.8, Damaged=0.6, Dirty+Damaged=0.48 |
 | Alien armor | M_armor | float | 0.3–1.0 | Alien AI System | Unarmored=1.0, Armored=0.6, Heavy=0.3 |
 
-**Output Range:** 3 to 90 (before ceil). Clamped to minimum 1 (every hit deals at least 1 damage).
+**Output Range:** 1–90 per hit (per pellet, for shotgun). Clamped to minimum 1 (every hit deals at least 1 damage). True minimum before clamp: ceil(15 × 0.7 × 0.5 × 0.48 × 0.3) = ceil(0.756) = 1. **Shotgun aggregate max:** All 9 pellets at headshot, clean, unarmored, in range = 9 × 90 = **810 damage** (body-shot max = 540).
 **Example (optimal):** Rifle headshot, clean weapon, unarmored alien, effective range: ceil(18 × 1.5 × 1.0 × 1.0 × 1.0) = **27 damage**. 4 headshots to kill a 100 HP alien.
-**Example (worst):** Pistol limb hit, damaged weapon, heavily armored alien, beyond effective range: ceil(25 × 0.7 × 0.5 × 0.6 × 0.3) = ceil(1.575) = **2 damage**. 50 shots to kill — effectively useless.
+**Example (worst):** Pistol limb hit, damaged weapon, heavily armored alien, beyond effective range: ceil(25 × 0.7 × 0.5 × 0.6 × 0.3) = ceil(1.575) = **2 damage**. Against a heavily armored alien, pistol limb shots are effectively useless — switch weapon or aim for the head/body.
 
 ---
 
@@ -198,24 +264,23 @@ The `damage_per_hit` formula is defined as:
 
 The `current_spread` formula is defined as:
 
-`S_current = S_base + min(N_consecutive × 0.3, 5.0) + S_movement + S_stance`
+`S_current = max(0, S_base + min(N_consecutive × S_per_shot, 5.0) + M_panic)`
 
 **Variables:**
 
 | Variable | Symbol | Type | Range | Description |
 |----------|--------|------|-------|-------------|
-| Base spread | S_base | float | 0.4–3.0° | Per weapon (Rule 2 table) |
+| Base spread | S_base | float | 0.4–3.0° | Weapon spread for current stance/movement from Rule 2 table. The table already incorporates stance and movement — do NOT add separate stance/movement terms. |
 | Consecutive shots | N_consecutive | int | 0–16 | Shots fired within last 1.0s |
-| Movement penalty | S_movement | float | 0–2.0° | Standing=0, Moving=+1.0, Sprinting=+2.0 |
-| Stance bonus | S_stance | float | -0.5 to 0 | Crouching=-0.5°, Standing=0 |
+| Spread per shot | S_per_shot | float | 0.2–0.6° | Weapon-specific: Pistol=0.2°, Rifle=0.6°. Shotgun: N/A (no accumulation between pump shots). |
+| Panic modifier | M_panic | float | 0–2.5° | HP≤30%: +1.5°; any alien ≤300cm: +1.0°. Conditions stack. See Rule 7. |
 
-**Output Range:** 0° to 10°. Clamped to 0 minimum.
-**Example:** Rifle, 5 consecutive shots, moving, standing: 0.8 + min(5×0.3, 5.0) + 1.0 + 0 = 0.8 + 1.5 + 1.0 = **3.3°**.
-**Example:** Pistol, 1 shot, crouching, stationary: 1.0 + 0 + 0 + (-0.5) = **0.5°**.
+**Output Range:** 0° to 10.5°. Hard-clamped to 0 minimum (spread cannot go negative).
+**Example (rifle, 5 shots, moving, not panicked):** S_base=1.5° (rifle+moving from table) + min(5×0.6°, 5.0°)=3.0° + 0 = **4.5°**.
+**Example (pistol, 1 shot, crouching, not panicked):** S_base=0.5° (pistol+crouching from table) + 1×0.2° + 0 = **0.7°**.
+**Example (pistol, panicked: HP=25% + alien at 200cm, crouching, 0 shots):** 0.5° + 0 + 2.5° = **3.0°**.
 
-**Spread reset**: N_consecutive resets to 0 after 1.0s of no firing. Each shot fired within 1.0s of the previous shot increments N_consecutive.
-
-**Clarification**: S_base is the weapon's base spread for the current stance/movement combination (from the spread table in Rule 2). The table values are NOT further modified by S_movement or S_stance — those columns in the table ARE the modifiers already applied. The formula adds consecutive-shot spread on top of the table value. Example: Rifle, moving, 3 consecutive shots: S_current = 1.5° (from table: rifle + moving) + min(3×0.3, 5.0) = 1.5 + 0.9 = **2.4°**.
+**Spread reset**: N_consecutive resets to 0 after 1.0s of no firing. Each shot fired within 1.0s of the previous shot increments N_consecutive. At exactly 1.0s boundary, reset applies (counter becomes 0, next shot starts at N=1). **Implementation**: tracked as a ring buffer of shot timestamps; on each shot, count entries within the trailing 1.0s window. For rifle burst fire (3 rounds at 0.15s each): all 3 rounds contribute to N_consecutive and are within the window, so a single burst trigger pull adds 3 to the count.
 
 ---
 
@@ -235,16 +300,33 @@ The `disengagement_timer` formula determines how long the player must remain und
 | In cover bonus | M_cover | float | 0 or 1 | 1 if player is in cover state, 0 otherwise |
 | Cover time bonus | T_cover_bonus | float | -3.0s | Time reduction for being in cover |
 
-**Output Range:** 7.0s to 30.0s.
+**Output Range:** 7.0s to 30.0s. N_alive is clamped to [0, 10] — if more than 10 aliens are in combat state, the timer uses 10. M_cover is a boolean (0 or 1). N_alive counts only aliens actively in combat state within 2000cm — aliens explicitly excluded from disengagement conditions (>2000cm, lost LOS) are not counted.
 **Example:** 3 aliens alive, player in cover: T = 10 + (3 × 2) + (1 × -3) = 10 + 6 - 3 = **13.0s**.
 **Example:** 0 aliens alive (all dead): T = 10 + (0 × 2) + 0 = **10.0s**.
 **Example:** 5 aliens alive, player not in cover: T = 10 + (5 × 2) + 0 = **20.0s**.
+
+---
+
+**Formula 4 — Panic Spread Modifier**
+
+`M_panic = M_panic_hp + M_panic_proximity`
+
+| Variable | Symbol | Type | Condition | Value |
+|----------|--------|------|-----------|-------|
+| HP panic modifier | M_panic_hp | float | HP ≤ PanicHPThreshold (30%) | +1.5° |
+| HP panic modifier | M_panic_hp | float | HP > PanicHPThreshold | 0° |
+| Proximity panic modifier | M_panic_proximity | float | Any alien ≤ PanicProximityRange (300cm) | +1.0° |
+| Proximity panic modifier | M_panic_proximity | float | No alien ≤ 300cm | 0° |
+
+**Output Range:** 0° to 2.5°. No clamp needed — values are discrete.
+**Example (both active):** HP=20, alien at 150cm: M_panic = 1.5 + 1.0 = **2.5°** added to S_current.
+**Example (one active):** HP=80, alien at 200cm: M_panic = 0 + 1.0 = **1.0°** added to S_current.
 
 ## Edge Cases
 
 - **If player fires weapon while in dodge i-frame window**: Shot fires normally. Dodge does not block player's own attacks. Dodge i-frames only block incoming damage.
 
-- **If player reloads and is damaged during reload animation**: Reload cancels. Ammo is NOT wasted — ammo was deducted from reserve at reload start. Partial magazine is inserted (full magazine if reload completed past 0.3s before end, partial if cancelled earlier). Prevents "damage-cancel-reload to save ammo" exploit.
+- **If player reloads and is damaged during reload animation**: Reload cancels. Magazine rounds = `max(initial_mag, ceil(T_elapsed / T_reload × capacity))`. Reserve refund = `capacity - rounds_in_magazine`. Example: pistol reload, started with 5 rounds, cancelled at 0.8s into 1.5s: `max(5, ceil(0.8/1.5 × 12)) = max(5, 7) = 7 rounds`. Reserve refund = 12-7 = 5 rounds returned. Prevents reload-cancel-refarm exploit since reserve was pre-deducted and only partially returned.
 
 - **If player switches weapons during combat entry (0.5s window)**: Weapon switch is queued and executes after combat entry animation completes. Prevents "instant weapon swap to counter specific alien" during engagement transition.
 
@@ -254,13 +336,13 @@ The `disengagement_timer` formula determines how long the player must remain und
 
 - **If player's last bullet is fired and magazine is empty**: Auto-reload begins after 0.5s delay (player can cancel by switching weapons or melee). If no reserve ammo, weapon is unusable — player must switch or melee.
 
-- **If shotgun fires at point-blank range (<50cm) and all 9 pellets hit**: Total damage = 60 × 9 × multipliers = up to 540 damage (before armor). One-shot kill on any alien. This is intentional — shotgun is devastating at close range but useless beyond 500cm.
+- **If shotgun fires at point-blank range (<50cm) and all 9 pellets hit body**: Total damage = 60 × 9 × 1.0 = 540 damage (body shot, clean, unarmored). Headshot max = 9 × 90 = 810 damage. One-shot kill on any alien. This is intentional — shotgun is devastating at close range but diminished beyond 500cm (M_dist = 0.5 per pellet beyond effective range).
 
 - **If alien projectile hits player during dodge i-frame**: Damage fully negated. No HP loss, no VFX, no audio. Dodge i-frames are absolute — no partial damage.
 
 - **If player is in combat and enters a new zone (Scene Management streaming)**: Combat state persists across zone boundaries. Aliens from the previous zone do not follow, but new zone aliens may engage if player is detected. Disengagement timer resets for new zone.
 
-- **If weapon is damaged (M_condition = 0.6) and player fires**: Weapon has a 5% chance per shot to jam. Jam requires 2.0s to clear (unskippable). Jam chance increases to 15% if weapon is damaged AND dirty.
+- **If weapon's ConditionTier is Damaged and player fires**: 5% chance per shot to jam. If weapon is also `IsDirty = true` (M_condition = 0.48, Dirty+Damaged): 15% chance per shot to jam. Jam requires 2.0s to clear (unskippable). Both flags read from Inventory System via `GetWeaponCondition(WeaponID)` which returns `{IsDirty: bool, ConditionTier: Intact/Damaged}`.
 
 - **If player has 0 stamina and tries to melee**: Melee fails. No swing, no stamina cost. Prompt shows "Too Exhausted" for 1.0s. Melee requires stamina to swing.
 
@@ -312,7 +394,7 @@ The `disengagement_timer` formula determines how long the player must remain und
 | `PistolReloadTime` | 1.5s | 1.0–2.5s | Pistol reload vulnerability | Reload too safe | Reload = death sentence |
 | `ShotgunReloadPerShell` | 0.6s | 0.4–1.0s | Shotgun reload pacing | Reload too fast | Reload impossibly slow |
 | `RifleReloadTime` | 2.0s | 1.5–3.0s | Rifle reload vulnerability | Reload too safe | Reload = death sentence |
-| `SpreadPerShot` | 0.3° | 0.1–0.8° | Accuracy degradation | Spray and pray viable | Single-shot only, no sustained fire |
+| `SpreadPerShot` | — | — | Superseded by `PistolSpreadPerShot` and `RifleSpreadPerShot` (weapon-specific) | — | — |
 | `SpreadResetTime` | 1.0s | 0.5–2.0s | Time to reset accuracy | Spread never matters | Spread punishes any follow-up |
 | `DisengageBaseTime` | 10.0s | 7.0–15.0s | Minimum disengage time | Too easy to escape | Impossible to disengage |
 | `DisengagePerAlien` | 2.0s | 1.0–4.0s | Extra time per alive alien | Alive aliens don't matter | Too many aliens = impossible |
@@ -323,6 +405,17 @@ The `disengagement_timer` formula determines how long the player must remain und
 | `MeleeRecoveryBase` | 0.5s | 0.3–0.8s | Melee vulnerability window | Melee too safe | Melee = suicide |
 | `HeadshotMultiplier` | 1.5 | 1.2–2.0 | Headshot bonus | Headshots too rewarding | Headshots not worth aiming for |
 | `LimbMultiplier` | 0.7 | 0.5–0.9 | Limb hit penalty | Limb hits too punishing | Limb hits same as body |
+| `PistolSpreadPerShot` | 0.2° | 0.1–0.5° | Pistol sustained accuracy degradation | Pistol spray viable | Pistol single-shot only |
+| `RifleSpreadPerShot` | 0.6° | 0.3–1.2° | Rifle burst accuracy penalty | Rifle too inaccurate | Rifle spread irrelevant |
+| `RifleNoiseRadius` | 2500cm | 1500–4000cm | Rifle gunshot attracts aliens | Rifle fire draws huge swarms | Rifle doesn't punish stealth break |
+| `PistolNoiseRadius` | 1000cm | 600–1500cm | Pistol noise propagation | Pistol not stealthy | Pistol viable for silent play |
+| `ShotgunNoiseRadius` | 1500cm | 1000–2500cm | Shotgun noise propagation | Shotgun draws nearby patrols | Shotgun safe to use indoors |
+| `PanicHPThreshold` | 0.30 | 0.15–0.45 | HP% that triggers panic spread | Panic kicks in too early (mid-fight) | Panic never triggers in real combat |
+| `PanicHPSpread` | 1.5° | 0.5–3.0° | Aim penalty when HP below threshold | Wounded player cannot aim at all | Wound has no mechanical consequence |
+| `PanicProximityRange` | 300cm | 150–600cm | Alien distance that triggers panic spread | Proximity panic from too far (long-range trigger) | Must be point-blank to feel panicked |
+| `PanicProximitySpread` | 1.0° | 0.3–2.0° | Aim penalty when alien is close | Close-range combat impossible | Proximity has no spread consequence |
+| `BackupCallDelay` | 2.0s | 1.0–4.0s | Time alien must hold LOS before calling backup | Aliens call backup almost instantly | Player can ignore backup threat entirely |
+| `BackupCallRadius` | 2500cm | 1500–4000cm | Range of alien backup call propagation | Large swarm responses everywhere | Backup never arrives |
 
 ## Visual/Audio Requirements
 
@@ -348,8 +441,15 @@ The `disengagement_timer` formula determines how long the player must remain und
 | **Melee miss** | Swing animation, no impact | Whoosh, recovery breath |
 | **Alien projectile hit (player)** | Impact flash (green), screen distortion, blood vignette | Alien spit impact, player grunt, wet splatter |
 | **Alien melee hit (player)** | Impact flash, screen shake, blood vignette | Alien roar, player grunt, body impact |
-| **Alien killed** | Collapse animation, alien blood pool (persistent decal), no explosion | Alien death vocalization, body impact, silence |
+| **Alien killed** | Collapse animation, alien blood pool (persistent decal), no explosion | Alien death vocalization, body impact. Ambient audio remains at combat duck level (-6dB) while any alien remains in combat — the world does not pause for a kill, and the mix reflects it. Ambient only recovers during Disengaging (see mixing table). |
+| **Player hit (any damage)** | Impact direction flash, screen shake (scaled to damage), blood vignette pulse | Directional impact sound, player pain grunt, brief breath interrupt |
+| **Player hit (panic threshold crossed)** | Red vignette intensifies at HP≤30% | Audible breathing escalation, heartbeat rises in mix. **De-escalation**: when HP rises above 30%, breathing fades back to baseline over 3.0s (not a hard snap). |
+| **Alien attack telegraph** | Alien wind-up animation (visible 0.2–1.0s pre-attack per type) | Alien vocalization or body-impact warning sound before attack lands |
+| **Reload complete** | Magazine seat-click VFX | Mechanical completion sound (slide click / bolt clack / shell seat) — confirms to player reload is done without checking hands |
+| **Low ammo (red threshold)** | Ammo counter turns red (Tactical HUD only) | Single chamber-click audio cue fires **once** when magazine crosses below the ≤20% threshold. Does not repeat on subsequent shots. Re-triggers if player reloads above threshold and drops below again. In Immersive Mode: dry-fire click on first fire attempt when magazine is fully empty (no ammo counter visible). |
 | **Weapon jam** | Weapon malfunction animation (rack slide, clear chamber) | Metallic click, frustrated rack, clear |
+| **No Ammo (fire attempt, empty mag + no reserve)** | No fire animation | Dry-fire click (mechanical empty chamber). Critical for Immersive Mode — no ammo counter, so audio is the primary signal. |
+| **Too Exhausted (melee attempt, insufficient stamina)** | No swing animation | Short exertion grunt + suppressed swing breath. Immersive Mode primary signal for stamina depletion. |
 | **Combat entry** | Camera FOV narrows to 65°, screen edge vignette pulses | Combat music fade-in (0.5s), tension drone |
 | **Combat disengage** | Camera FOV returns to 75°, vignette fades | Combat music fade-out (1.0s), ambient returns |
 
@@ -359,8 +459,8 @@ The `disengagement_timer` formula determines how long the player must remain und
 |-------|-------|-------------|---------|
 | **Non-Combat** | None | World SFX dominant | Full ambient |
 | **Combat Entry** | Fade-in (0.5s, low drone) | Weapon SFX dominant | Ambient ducked -6dB |
-| **Active Combat** | Full combat layer (-12dB) | Weapon + alien SFX dominant | Ambient ducked -12dB |
-| **Disengaging** | Fade-out (1.0s) | Tension SFX (footsteps, breathing) | Ambient fading in |
+| **Active Combat** | Full combat layer (music at -12dB relative reference) | Weapon + alien SFX dominant | Ambient ducked -6dB (world remains present — Pillar 1) |
+| **Disengaging** | Fade-out (1.0s) | Tension SFX (footsteps, breathing) | Ambient fading in from -6dB to 0dB over 3.0s |
 | **Disengaged** | None | World SFX dominant | Full ambient |
 
 ### Performance Budget
@@ -378,7 +478,7 @@ The `disengagement_timer` formula determines how long the player must remain und
 | Context | HUD Element | Update Frequency | Condition |
 |---------|-------------|-----------------|-----------|
 | **Immersive mode** | No combat UI | — | Default. Player reads combat state from audio, camera, and alien behavior. |
-| **Immersive mode** | Ammo check (temporary) | On IA_Reload when not empty | Shows magazine + reserve for 2.0s after check animation. |
+| **Immersive mode** | Ammo check (temporary) | On IA_Reload when not empty | Check animation (0.5s) is **interruptible** by any action (fire, dodge, sprint). Display persists for 2.0s regardless of interruption. |
 | **Immersive mode** | Screen edge vignette | On combat state change | Pulses red during combat, fades when disengaged. |
 | **Tactical HUD** | Ammo counter (bottom-right) | Every frame | Magazine / Reserve display. Color: green (>50%), orange (20–50%), red (<20%). |
 | **Tactical HUD** | Combat state indicator | On state change | Text: "In Combat", "Disengaging", "Clear". |
@@ -397,17 +497,20 @@ The `disengagement_timer` formula determines how long the player must remain und
 | "Injury state affects combat" | `design/gdd/health-system.md` | Walk speed penalty, stamina regen penalty in Critical/Near Death | Rule dependency |
 | "Detection = 100 triggers combat" | `design/gdd/stealth-system.md` | Detected state, OnStealthBroken event | State trigger |
 | "Disengagement resets stealth" | `design/gdd/stealth-system.md` | Stealth System recalculates from zero | Rule dependency |
-| "Alien armor values" | `design/gdd/alien-ai-system.md` (Not Started) | Per-alien armor, health, combat behavior | Data dependency |
-| "Weapon data, ammo counts" | `design/gdd/inventory-system.md` (Not Started) | Weapon items, ammo types, carry limits | Data dependency |
+| "Alien armor values" | `design/gdd/alien-ai-system.md` | Per-alien armor, health, combat behavior | Data dependency |
+| "Weapon data, ammo counts" | `design/gdd/inventory-system.md` | Weapon items, ammo types, carry limits | Data dependency |
 | "Recoil shake" | `design/gdd/camera-system.md` | AddRecoil(Amplitude, Duration), shake formulas | Data dependency |
-| "Combat FOV (65°)" | `design/gdd/camera-system.md` | FOV transitions, camera mode switching | Rule dependency |
-| "Clue inaccessible during combat" | `design/gdd/investigation-system.md` (Not Started) | Some clues only accessible when not in combat | Rule dependency |
+| "Combat FOV (65°)" | `design/gdd/camera-system.md` | FOV transitions (smooth interpolation owned by Camera System), camera mode switching | Rule dependency |
+| "Clue inaccessible during combat" | `design/gdd/investigation-system.md` | Some clues only accessible when not in combat | Rule dependency |
+| "HP threshold for panic spread" | `design/gdd/health-system.md` | Player HP value, Injured/Near-Death state thresholds | Rule dependency |
+| "Call for backup (Rule 8)" | `design/gdd/alien-ai-system.md` | Alien squad mechanics, backup response AI, arrival timing | Rule dependency |
+| "Panic proximity condition (Rule 7)" | `design/gdd/alien-ai-system.md` | Per-alien distance query for 300cm proximity check | Data dependency |
 
 ## Acceptance Criteria
 
 - **GIVEN** player has pistol equipped with 12 rounds in magazine, **WHEN** player fires one shot, **THEN** magazine shows 11 rounds, ammo reserve is unchanged, and hitscan trace registers hit on target within ±1.0° spread.
 
-- **GIVEN** player fires pistol 5 times within 1.0s, **WHEN** 6th shot is fired, **THEN** spread is S_base + 1.5° (5 × 0.3°) + movement/stance modifiers.
+- **GIVEN** player fires pistol 5 times within 1.0s while standing stationary, **WHEN** 6th shot is fired, **THEN** spread = S_base(1.0°, pistol standing) + min(5 × 0.2°, 5.0°) + 0 = **2.0°** (no panic, standing, stationary).
 
 - **GIVEN** player fires pistol and waits 1.5s, **WHEN** next shot is fired, **THEN** spread has reset to S_base (N_consecutive = 0 after 1.0s).
 
@@ -419,21 +522,27 @@ The `disengagement_timer` formula determines how long the player must remain und
 
 - **GIVEN** player initiates reload with 5 rounds in magazine and 20 in reserve, **WHEN** reload starts, **THEN** reserve decreases by 7 (to fill magazine to 12) immediately, and reload animation plays for 1.5s.
 
-- **GIVEN** player is reloading and takes damage at 0.8s into reload, **WHEN** reload is cancelled, **THEN** magazine is filled to 12 (reload was past 0.3s before completion), reserve was already deducted, and player can act immediately.
+- **GIVEN** player initiates pistol reload with 0 rounds in magazine and only 3 rounds in reserve (less than fill needed = 12), **WHEN** reload starts, **THEN** actual_deduction = min(12-0, 3) = **3**; reserve becomes 0; magazine becomes 0+3 = **3 rounds**. No negative reserve. Reload animation plays to completion.
+
+- **GIVEN** player initiates pistol reload with 5 rounds in magazine, **WHEN** damage cancels reload at 0.8s into 1.5s total, **THEN** magazine = max(5, ceil(0.8/1.5 × 12)) = max(5, 7) = **7 rounds**; reserve refund = 12-7 = **5 rounds returned** to reserve; player can act immediately.
 
 - **GIVEN** player has 0 reserve ammo and magazine is empty, **WHEN** player attempts to fire, **THEN** weapon does not fire, "No Ammo" prompt shows for 1.0s, and player must switch weapons or melee.
 
-- **GIVEN** stealth detection reaches 100, **WHEN** combat triggers, **THEN** IMC_Combat is pushed within 0.1s, combat music fades in over 0.5s, and camera FOV narrows to 65°.
+- **GIVEN** stealth detection reaches 100 (Detected state), **WHEN** combat triggers, **THEN** Combat System pushes IMC_Combat within 0.1s, combat music fades in over 0.5s, and camera FOV narrows to 65°. At detection=75 (Engaged state): no IMC push, no music change.
 
-- **GIVEN** all aliens within 2000cm are killed, **WHEN** disengagement timer starts, **THEN** timer counts from 10.0s to 0.0s, and at 0.0s IMC_Combat is popped and combat music fades out.
+- **GIVEN** all aliens within 2000cm are killed AND player is NOT in cover state, **WHEN** disengagement timer starts, **THEN** timer = T_base(10.0) + 0×T_per_alien + M_cover(0)×T_cover_bonus = **10.0s**. At 10.0s, IMC_Combat is popped and combat music fades out.
 
-- **GIVEN** player breaks LOS with all aliens and remains undetected, **WHEN** 10.0s elapse (no alive aliens), **THEN** combat disengages, IMC_Combat is popped, and Stealth System recalculates from zero.
+- **GIVEN** all aliens within 2000cm are killed AND player IS in cover state, **WHEN** disengagement timer starts, **THEN** timer = 10.0 + 0×2 + 1×(-3) = **7.0s** (Formula 3 minimum). IMC_Combat popped at 7.0s.
+
+- **GIVEN** player breaks LOS with 2 alive aliens (both lost LOS) AND player is NOT in cover state, **WHEN** disengagement timer elapses (Formula 3: 10.0 + 2×2 + 0 = **14.0s**), **THEN** combat disengages, IMC_Combat is popped, and Stealth System recalculates from zero.
 
 - **GIVEN** 3 aliens alive, player in cover, **WHEN** disengagement timer starts, **THEN** timer = 10 + (3 × 2) + (-3) = 13.0s.
 
 - **GIVEN** disengagement timer is at 9.9s and an alien re-detects the player, **WHEN** detection occurs, **THEN** timer resets to 0 and combat re-engages immediately.
 
-- **GIVEN** player melee attacks alien in Hidden state, **WHEN** melee connects, **THEN** combat triggers immediately, stealth is broken, and IMC_Combat is pushed.
+- **GIVEN** player melee attacks alien in Hidden state, **WHEN** player initiates the melee swing (attack input received, before hit connects), **THEN** combat triggers immediately, stealth is broken, and IMC_Combat is pushed — regardless of whether the swing hits or misses.
+
+- **GIVEN** player swings melee at alien in Hidden state AND swing misses (no hit connection), **WHEN** swing animation plays, **THEN** combat is still triggered, IMC_Combat is pushed, stealth broken (trigger = swing initiation, not connection).
 
 - **GIVEN** player has 5 stamina and tries to melee (costs 10), **WHEN** melee is attempted, **THEN** melee fails, stamina remains at 5, and "Too Exhausted" prompt shows for 1.0s.
 
@@ -445,6 +554,24 @@ The `disengagement_timer` formula determines how long the player must remain und
 
 - **GIVEN** player aims down sights during combat (FOV 65°), **WHEN** scope activates, **THEN** FOV changes to 60° (scoped). On scope release, FOV returns to 65° (combat), not 75° (default).
 
+- **GIVEN** player HP is 25 (≤30% of 100), **WHEN** player fires pistol standing with 0 consecutive shots, **THEN** spread = S_base(1.0°) + 0 + M_panic_hp(1.5°) = **2.5°**.
+
+- **GIVEN** player HP is 25 and alien is 200cm away, **WHEN** player fires pistol, **THEN** spread = 1.0° + 0 + (1.5° + 1.0°) = **3.5°** (both panic conditions active).
+
+- **GIVEN** player fires rifle shot while in a zone with an unalerted alien 2000cm away, **WHEN** shot fires, **THEN** alien transitions to Alert state (within 2500cm rifle noise radius).
+
+- **GIVEN** player fires pistol while in a zone with an unalerted alien 2000cm away, **WHEN** shot fires, **THEN** alien does NOT transition (pistol noise radius = 1000cm; 2000cm is outside range).
+
+- **GIVEN** weapon jam animation starts (2.0s), **WHEN** player fires or dodges during animation, **THEN** input is queued but jam animation plays to completion; weapon is ready to fire after animation ends.
+
+- **GIVEN** player triggers reload cancel by sprinting at 1.0s into 1.5s pistol reload (started with 5 rounds), **WHEN** cancel occurs, **THEN** magazine = max(5, ceil(1.0/1.5 × 12)) = max(5, 8) = **8 rounds**; reserve refund = 12-8 = **4 rounds returned**.
+
+- **GIVEN** alien has maintained LOS to player for exactly 2.0s in combat, **WHEN** backup call triggers, **THEN** `OnBackupCalled(AlienID, Location)` event fires on Combat System and threat indicators update on HUD.
+
+- **GIVEN** player lands 5 melee hits on alien A within a 3.0s window (each hit within 1.0s of previous), AND immediately switches to alien B, **WHEN** 1st melee hit connects on alien B, **THEN** recovery time = base **0.5s** (not 0.5 + 1×0.2 = 0.7s) — per-target counter resets to 0 on target switch, confirmed.
+
+- **GIVEN** stealth detection is at 75 (Engaged state), **WHEN** player stays hidden and alien does not reach 100 detection, **THEN** IMC_Combat is NOT pushed, combat music does NOT start, and state remains Non-Combat.
+
 ## Open Questions
 
 | # | Question | Owner | Target Resolution |
@@ -452,7 +579,7 @@ The `disengagement_timer` formula determines how long the player must remain und
 | OQ-1 | Should weapons degrade over time (condition decreases with use), or only from environmental damage (water, alien acid)? Affects M_weapon_condition tuning. | game-designer | Inventory System GDD |
 | OQ-2 | Should the player be able to scavenge ammo from dead aliens? Adds resource loop but may reduce scavenging tension. | game-designer | Alien AI System GDD |
 | OQ-3 | Should alien armor be breakable (sustained fire on armored sections reduces armor)? Adds tactical depth but increases complexity. | game-designer | Alien AI System GDD |
-| OQ-4 | Should combat have a "panic" mechanic (aim stability decreases when health is low or aliens are close)? Reinforces survival tension. | game-designer | Before MVP implementation |
+| OQ-4 | ~~Should combat have a "panic" mechanic?~~ **RESOLVED** — Incorporated as Rule 7 (Panic State) and Formula 4. HP≤30% adds +1.5° spread; alien ≤300cm adds +1.0°. Both conditions stack to +2.5° max. Tuning knobs added. | — | Resolved 2026-05-20 |
 | OQ-5 | Should weapon switching be instant in inventory screen but animated in-world? Affects combat pacing during weapon swaps. | ux-designer | Inventory System GDD |
 | OQ-6 | Should the player be able to pick up alien weapons (biomass-based weapons)? Adds variety but may conflict with "human scarcity" theme. | game-designer | Alien AI System GDD |
 | OQ-7 | Multiplayer (future) — hit registration authority, lag compensation, damage synchronization. | architecture | Multiplayer ADR |

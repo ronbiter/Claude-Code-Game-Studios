@@ -67,16 +67,16 @@ proceed to L1 for those GDDs plus any GDDs listed in their "Key deps".
 Before full-reading any GDD, check for the entity registry:
 
 ```
-Read path="design/registry/entities.yaml"
+Read path="design/registry/entities-index.yaml"
 ```
 
-If the registry exists and has entries, use it as a **pre-built conflict
-baseline**: known entities, items, formulas, and constants with their
-authoritative values and source GDDs. In Phase 2, grep GDDs for registered
-names first — this is faster than reading all GDDs in full before knowing
-what to look for.
+This is a cross-domain audit — load ALL domain files listed in the index.
+Use them as a **pre-built conflict baseline**: known entities, items, formulas,
+and constants with their authoritative values and source GDDs. In Phase 2,
+grep GDDs for registered names first — this is faster than reading all GDDs
+in full before knowing what to look for.
 
-If the registry is empty or absent: proceed without it. Note in the report:
+If `entities-index.yaml` is absent or all domain files are empty: proceed without it. Note in the report:
 "Entity registry is empty — consistency checks rely on full GDD reads only.
 Run `/consistency-check` after this review to populate the registry."
 

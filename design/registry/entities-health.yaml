@@ -1,0 +1,177 @@
+# Entity Registry — Health Domain
+#
+# PURPOSE: Health formulas and constants.
+# Load when working on: health-system.
+#
+# Part of the split registry. Entry point: design/registry/entities-index.yaml
+
+version: 1
+last_updated: "2026-05-21"
+
+formulas:
+  - name: healing_effectiveness
+    status: active
+    source: design/gdd/health-system.md
+    referenced_by:
+      - design/gdd/health-system.md
+    variables:
+      - HealAmount
+      - CurrentHP
+      - MaxHP
+    output_range: [0, 60]
+    expression: "min(HealAmount, MaxHP − CurrentHP)"
+    notes: "No overheal. Returns 0 when CurrentHP = 100 (item wasted)."
+    added: 2026-04-29
+    revised: ""
+
+  - name: environmental_damage_tick
+    status: active
+    source: design/gdd/health-system.md
+    referenced_by:
+      - design/gdd/health-system.md
+    variables:
+      - BaseRate
+      - M_zone
+    output_range: [5, 15]
+    expression: "BaseRate × M_zone"
+    notes: "Output in HP/s. Zone multipliers: Z01=1.0, Z02=1.5, Z03=1.0, Z04=2.5, Z05=3.0."
+    added: 2026-04-29
+    revised: ""
+
+  - name: infection_exposure_damage
+    status: active
+    source: design/gdd/health-system.md
+    referenced_by:
+      - design/gdd/health-system.md
+    variables:
+      - BaseExposureRate
+      - T_inBiomass
+      - T_grace
+    output_range: [0, 999]
+    expression: "BaseExposureRate × max(0, T_inBiomass − T_grace)"
+    notes: "Output in HP/s. T_grace=0.5s prevents instant damage from brief contact."
+    added: 2026-04-29
+    revised: ""
+
+  - name: injury_speed_penalty
+    status: active
+    source: design/gdd/health-system.md
+    referenced_by:
+      - design/gdd/health-system.md
+      - design/gdd/movement-system.md
+    variables:
+      - V_base
+      - P_speed
+    output_range: [480, 600]
+    expression: "V_base × (1.0 − P_speed)"
+    notes: "Output in cm/s. P_speed: Operational=0, Wounded=0, Critical=0.1, NearDeath=0.2."
+    added: 2026-04-29
+    revised: ""
+
+  - name: injury_stamina_regen_penalty
+    status: active
+    source: design/gdd/health-system.md
+    referenced_by:
+      - design/gdd/health-system.md
+      - design/gdd/movement-system.md
+    variables:
+      - R_base
+      - P_regen
+    output_range: [12, 20]
+    expression: "R_base × (1.0 − P_regen)"
+    notes: "Output in stamina/s. P_regen: Operational=0, Wounded=0, Critical=0.2, NearDeath=0.4."
+    added: 2026-04-29
+    revised: ""
+
+  - name: injury_sprint_drain_penalty
+    status: active
+    source: design/gdd/health-system.md
+    referenced_by:
+      - design/gdd/health-system.md
+      - design/gdd/movement-system.md
+    variables:
+      - R_sprint_base
+      - P_drain
+    output_range: [15.0, 17.25]
+    expression: "R_sprint_base × (1.0 + P_drain)"
+    notes: "Output in stamina/s. P_drain: Operational=0, Wounded=0, Critical=0.15, NearDeath=0.15. NOTE: Critical and NearDeath currently share the same P_drain — consider differentiating NearDeath (e.g. 0.20) to preserve tier escalation."
+    added: 2026-04-29
+    revised: "2026-05-19"
+    # was: Critical=0.1 — health GDD updated to 15%→17.25/s (from 10%→16.5/s) after cross-review 2026-04-30
+
+  - name: injury_dodge_recovery_penalty
+    status: active
+    source: design/gdd/health-system.md
+    referenced_by:
+      - design/gdd/health-system.md
+      - design/gdd/movement-system.md
+    variables:
+      - T_recovery_base
+      - P_recovery
+    output_range: [0.30, 0.40]
+    expression: "T_recovery_base + P_recovery"
+    notes: "Output in seconds. P_recovery: Operational=0, Wounded=0, Critical=0, NearDeath=0.1."
+    added: 2026-04-29
+    revised: ""
+
+constants:
+  # ─── Health System Constants ───────────────────────────────────────────────
+  - name: heal_field_dressing
+    status: active
+    source: design/gdd/health-system.md
+    referenced_by:
+      - design/gdd/health-system.md
+    value: 25
+    unit: HP
+    added: 2026-04-29
+    revised: ""
+
+  - name: heal_medkit
+    status: active
+    source: design/gdd/health-system.md
+    referenced_by:
+      - design/gdd/health-system.md
+    value: 60
+    unit: HP
+    added: 2026-04-29
+    revised: ""
+
+  - name: heal_stimshot
+    status: active
+    source: design/gdd/health-system.md
+    referenced_by:
+      - design/gdd/health-system.md
+    value: 40
+    unit: HP
+    added: 2026-04-29
+    revised: ""
+
+  - name: env_damage_base_rate
+    status: active
+    source: design/gdd/health-system.md
+    referenced_by:
+      - design/gdd/health-system.md
+    value: 5.0
+    unit: HP/s
+    added: 2026-04-29
+    revised: ""
+
+  - name: infection_exposure_base_rate
+    status: active
+    source: design/gdd/health-system.md
+    referenced_by:
+      - design/gdd/health-system.md
+    value: 3.0
+    unit: HP/s
+    added: 2026-04-29
+    revised: ""
+
+  - name: infection_grace_period
+    status: active
+    source: design/gdd/health-system.md
+    referenced_by:
+      - design/gdd/health-system.md
+    value: 0.5
+    unit: seconds
+    added: 2026-04-29
+    revised: ""

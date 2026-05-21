@@ -1,0 +1,90 @@
+# Domain: input | Load this file only when working on input architecture decisions.
+#
+# Covers: input architecture, Enhanced Input System, Input Mapping Contexts,
+# input action routing, runtime rebinding, legacy input patterns.
+#
+# ADRs in this domain: ADR-0003
+
+version: 1
+last_updated: "2026-05-20"
+
+# ─── STATE OWNERSHIP ─────────────────────────────────────────────────────────
+
+state_ownership:
+  - state: active_input_mapping_contexts
+    status: active
+    owner_system: AHostileWorldPlayerController
+    adr: docs/architecture/adr-0003-enhanced-input-architecture.md
+    interface: "PushIMC(UInputMappingContext*, int32 Priority); PopIMC(UInputMappingContext*) — all callers must go through PC"
+    write_access: AHostileWorldPlayerController-only (Movement/Combat call PushIMC/PopIMC via PC public interface)
+    referenced_by:
+      - docs/architecture/adr-0003-enhanced-input-architecture.md
+    added: "2026-05-19"
+    revised: ""
+
+# ─── INTERFACE CONTRACTS ──────────────────────────────────────────────────────
+
+interfaces:
+  - contract: input_action_routing
+    status: active
+    pattern: dynamic_multicast_delegate
+    description: "PC Route_* callbacks (SetupInputComponent bindings) fire ADR-0001 Tier 1 multicast delegates. Subsystems subscribe via AddDynamic(). PC never calls subsystem methods directly."
+    producer: AHostileWorldPlayerController (Route_* callbacks)
+    consumers:
+      - Movement System (Route_Move, Route_Sprint, Route_Crouch, Route_Jump, Route_Dodge, Route_Lean*)
+      - Combat System (Route_Attack, Route_Aim, Route_Reload, Route_Melee)
+      - Inventory System (Route_Inventory, Route_QuickSlot*)
+      - HUD System (Route_Map, Route_Pause)
+      - Dialogue System (via Interact routing)
+      - Investigation System (via Interact routing)
+    adr: docs/architecture/adr-0003-enhanced-input-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0003-enhanced-input-architecture.md
+    added: "2026-05-19"
+    revised: ""
+
+# ─── PERFORMANCE BUDGETS ──────────────────────────────────────────────────────
+
+performance_budgets: []
+
+# ─── API DECISIONS ───────────────────────────────────────────────────────────
+
+api_decisions:
+  - purpose: input_action_binding_location
+    status: active
+    api: "APlayerController::SetupInputComponent() — all 22 IA_* BindAction calls here"
+    not: "APawn/ACharacter::SetupPlayerInputComponent() for core gameplay actions; split binding across PC and Character"
+    adr: docs/architecture/adr-0003-enhanced-input-architecture.md
+    reason: "PC is the thin router. SetupInputComponent fires once and survives pawn swaps. All routing stays in one class."
+    referenced_by:
+      - docs/architecture/adr-0003-enhanced-input-architecture.md
+    added: "2026-05-19"
+    revised: ""
+
+  - purpose: runtime_input_rebinding
+    status: active
+    api: "UEnhancedInputUserSettings::MapPlayerKey() + SaveSettings() / LoadSettings()"
+    not: "AddPlayerMappedKey() / PlayerMappableInputConfig (pre-5.3 legacy path)"
+    adr: docs/architecture/adr-0003-enhanced-input-architecture.md
+    reason: "UEnhancedInputUserSettings is the UE 5.3+ production API with built-in persistence. Legacy path is superseded."
+    referenced_by:
+      - docs/architecture/adr-0003-enhanced-input-architecture.md
+    added: "2026-05-19"
+    revised: ""
+
+# ─── FORBIDDEN PATTERNS ──────────────────────────────────────────────────────
+
+forbidden_patterns:
+  - pattern: legacy_input_system
+    status: active
+    description: "BindAction/BindAxis on raw UInputComponent must not be used. All input bindings use UEnhancedInputComponent::BindAction() on TObjectPtr<UInputAction> assets."
+    why: "Legacy input is deprecated in UE5, has no context switching, no runtime rebinding, and will be removed in future versions."
+    adr: docs/architecture/adr-0003-enhanced-input-architecture.md
+    added: "2026-05-19"
+
+  - pattern: direct_ia_binding_in_movement
+    status: active
+    description: "UHostileMovementComponent and UCoverComponent must not call BindAction() on any UInputAction directly. Movement input is received exclusively via AHostileWorldPlayerController multicast delegates (OnMove, OnSprint, OnCrouch, OnJump, OnDodge, OnLean*)."
+    why: "ADR-0003 establishes PC as the sole IA_* binding location. Direct CMC binding bypasses IMC context switching, breaks the thin-router pattern, and produces input that fires regardless of active mapping context."
+    adr: docs/architecture/adr-0010-movement-architecture.md
+    added: "2026-05-20"

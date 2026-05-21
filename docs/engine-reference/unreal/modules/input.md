@@ -238,20 +238,42 @@ void MoveForward(float Value) {
 
 ## Rebinding Input at Runtime
 
-### Change Key Mapping
+> ⚠️ **UE 5.3+ preferred API**: Use `UEnhancedInputUserSettings` (see below).
+> `AddPlayerMappedKey` / `PlayerMappableInputConfig` is the pre-5.3 legacy path — still present in 5.7 but superseded. See ADR-0003.
+
+### Preferred: UEnhancedInputUserSettings (UE 5.3+, stable in 5.7)
 
 ```cpp
+// Access via subsystem
+UEnhancedInputUserSettings* UserSettings =
+    GetLocalPlayer()->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>()->GetUserSettings();
+
+// Remap a key (action must have bIsPlayerMappable=true on the IA asset)
+FMapPlayerKeyArgs Args;
+Args.MappingName = FName("IA_Attack");          // must match PlayerMappableKey name on IA asset
+Args.Slot        = EPlayerMappableKeySlot::First;
+Args.NewKey      = EKeys::F;
+
+FGameplayTagContainer FailureReason;
+UserSettings->MapPlayerKey(Args, FailureReason);
+UserSettings->SaveSettings();   // persist to settings file
+
+// Load on startup
+UserSettings->LoadSettings();
+
+// Lock an action from rebinding: set bIsPlayerMappable=false on the IA asset in editor
+// UEnhancedInputUserSettings will reject MapPlayerKey calls for that action automatically
+```
+
+### Legacy (pre-5.3, avoid for new projects)
+
+```cpp
+// ⚠️ LEGACY — use UEnhancedInputUserSettings instead
 #include "PlayerMappableInputConfig.h"
 
-// Get subsystem
 UEnhancedInputLocalPlayerSubsystem* Subsystem = /* Get subsystem */;
-
-// Get player mappable keys
-FPlayerMappableKeySlot KeySlot = FPlayerMappableKeySlot(/*..*/);
-FKey NewKey = EKeys::F; // Rebind to F key
-
-// Apply new mapping
-Subsystem->AddPlayerMappedKey(/*..*/);
+FKey NewKey = EKeys::F;
+Subsystem->AddPlayerMappedKey(/*..*/);  // superseded by UEnhancedInputUserSettings
 ```
 
 ---

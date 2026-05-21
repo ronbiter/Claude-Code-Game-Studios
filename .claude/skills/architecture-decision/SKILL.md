@@ -127,8 +127,10 @@ Read related code, existing ADRs, and relevant GDDs from `design/gdd/`.
 
 ### 3a: Architecture Registry Check (BLOCKING gate)
 
-Read `docs/registry/architecture.yaml`. Extract entries relevant to this ADR's
-domain and decision (grep by system name, domain keyword, or state being touched).
+Read `docs/registry/adr-index.yaml` to identify the relevant domain file.
+Then read only the domain file(s) that match this ADR's domain — do NOT load all domain files.
+Domain files: `adr-communication.yaml`, `adr-subsystems.yaml`, `adr-data.yaml`, `adr-input.yaml`, `adr-rendering.yaml`.
+Extract entries relevant to this ADR's domain and decision (grep by system name, domain keyword, or state being touched).
 
 Present any relevant stances to the user **before** the collaborative design
 begins, as locked constraints:
@@ -407,16 +409,18 @@ Registry candidates from this ADR:
   EXISTING (referenced_by update only): player_health → already registered ✅
 ```
 
-**Registry append logic**: When writing to `docs/registry/architecture.yaml`, do NOT assume sections are empty. The file may already have entries from previous ADRs written in this session. Before each Edit call:
-1. Read the current state of `docs/registry/architecture.yaml`
-2. Find the correct section (state_ownership, interfaces, forbidden_patterns, api_decisions)
-3. Append the new entry AFTER the last existing entry in that section — do not try to replace a `[]` placeholder that may no longer exist
-4. If the section has entries already, use the closing content of the last entry as the `old_string` anchor, and append the new entry after it
+**Registry append logic**: When writing to the domain registry file, do NOT assume sections are empty. Before each Edit call:
+1. Read `docs/registry/adr-index.yaml` to identify which domain file to update
+2. Read the current state of the correct domain file (e.g. `docs/registry/adr-communication.yaml`)
+3. Find the correct section (state_ownership, interfaces, forbidden_patterns, api_decisions)
+4. Append the new entry AFTER the last existing entry in that section — do not try to replace a `[]` placeholder that may no longer exist
+5. If the section has entries already, use the closing content of the last entry as the `old_string` anchor, and append the new entry after it
+6. Also append a new entry to `docs/registry/adr-index.yaml` for the new ADR if it is not yet listed there
 
-**BLOCKING — do not write to `docs/registry/architecture.yaml` without explicit user approval.**
+**BLOCKING — do not write to any domain registry file without explicit user approval.**
 
 Ask using `AskUserQuestion`:
-- "May I update `docs/registry/architecture.yaml` with these [N] new stances?"
+- "May I update `docs/registry/adr-[domain].yaml` with these [N] new stances?"
   - Options: "Yes — update the registry", "Not yet — I want to review the candidates", "Skip registry update"
 
 Only proceed if the user selects yes. If yes: append new entries. Never modify existing entries — if a stance is
@@ -429,7 +433,7 @@ changing, set the old entry to `status: superseded_by: ADR-[NNNN]` and add the n
 After the ADR is written (and registry optionally updated), close with `AskUserQuestion`.
 
 Before generating the widget:
-1. Read `docs/registry/architecture.yaml` — check if any priority ADRs are still unwritten (look for ADRs flagged in technical-preferences.md or systems-index.md as prerequisites)
+1. Read `docs/registry/adr-index.yaml` — check if any priority ADRs are still unwritten (look for ADRs flagged in technical-preferences.md or systems-index.md as prerequisites)
 2. Check if all prerequisite ADRs are now written. If yes, include a "Start writing GDDs" option.
 3. List ALL remaining priority ADRs as individual options — not just the next one or two.
 

@@ -44,7 +44,7 @@ The Stealth System maintains a single **detection score** (0–100) that represe
 | **0–24** | **Hidden** | AI in patrol/idle state. No awareness of player. | No feedback. Player is invisible. |
 | **25–49** | **Suspicious** | AI investigates last known player position. Alert posture. | Subtle audio cue: alien vocalization, biomass stirring. |
 | **50–74** | **Alert** | AI actively searches. Moves toward player's last known position. Scans environment. | Audio cue intensifies. Camera slight zoom. Tension music layer. |
-| **75–99** | **Engaged** | AI has visual or auditory lock. Moving toward player. Combat imminent. | Audio cue loud. Screen edge vignette pulses red. IMC_Combat pushed. |
+| **75–99** | **Engaged** | AI has visual or auditory lock. Moving toward player. Aliens attack (alien Combat Branch). | Audio cue loud. Screen edge vignette pulses red. **IMC_Combat NOT pushed** — player Combat Mode (IMC_Combat + combat music) engages only at Detected (100), owned by Combat System. `IsPlayerUnderThreat()` returns true (≥75) for narrative deferral. |
 | **100** | **Detected** | Combat engaged. AI attacks. Stealth broken. | Full combat state. IMC_Combat active. Stealth meter hidden. |
 
 **Detection score is per-alien**: each alien maintains its own detection score for the player. The player's global detection level = max(all individual alien detection scores).
@@ -128,7 +128,7 @@ Detection states transition based on the global detection level (max of all indi
 | Suspicious | Alert | Any alien's D_total ≥ 50 | Escalation |
 | Alert | Suspicious | All aliens' D_total < 50 for 3.0s | De-escalation with cooldown |
 | Alert | Engaged | Any alien's D_total ≥ 75 | Combat imminent |
-| Engaged | Alert | All aliens' D_total < 75 AND player breaks LOS for 5.0s | Stealth state de-escalates. IMC_Combat remains active (Combat System owns IMC pop). Player can continue re-stealthing. |
+| Engaged | Alert | All aliens' D_total < 75 AND player breaks LOS for 5.0s | Stealth state de-escalates (detection score only). Stealth never pushes or pops IMC_Combat. If player Combat Mode is active (player previously reached Detected=100), IMC_Combat persists under Combat System's `T_disengage` timer, decoupled from this detection de-escalation. Player can continue re-stealthing. |
 | Engaged | Detected | Any alien's D_total = 100 | Full combat |
 | Detected | Engaged | All aliens' D_total < 100 AND player breaks LOS for 3.0s | Recovery from full detection |
 
@@ -213,9 +213,9 @@ This ensures that crouching always grants stealth input options (lean, silent mo
 |-------|----------------|-----------------|----------------|------------|
 | **Hidden** | 0–24 | Game start, or all aliens <25 for 5.0s | Any alien ≥25 | IMC_Default or IMC_Stealth |
 | **Suspicious** | 25–49 | Any alien ≥25 | All aliens <25 for 5.0s OR any alien ≥50 | IMC_Stealth pushed (see Rule 7) |
-| **Alert** | 50–74 | Any alien ≥50 | All aliens <50 for 3.0s OR any alien ≥75 | IMC_Stealth + IMC_Combat queued |
-| **Engaged** | 75–99 | Any alien ≥75 | All aliens <75 + LOS broken 5.0s OR any alien =100 | IMC_Combat pushed |
-| **Detected** | 100 | Any alien =100 | All aliens <100 + LOS broken 3.0s | IMC_Combat active |
+| **Alert** | 50–74 | Any alien ≥50 | All aliens <50 for 3.0s OR any alien ≥75 | IMC_Stealth (no IMC_Combat) |
+| **Engaged** | 75–99 | Any alien ≥75 | All aliens <75 + LOS broken 5.0s OR any alien =100 | IMC_Stealth (IMC_Combat is Combat-owned, pushed only at Detected=100) |
+| **Detected** | 100 | Any alien =100 | All aliens <100 + LOS broken 3.0s | IMC_Combat active (pushed/owned by Combat System) |
 
 ### Interactions with Other Systems
 
@@ -351,7 +351,7 @@ See Movement System GDD Formula 4 for full definition. The Stealth System uses t
 
 **Hard Dependencies** (system cannot function without):
 - **Movement System** ✅ (designed) — provides noise level (0–100), visibility modifier, movement state, surface type. Stealth System reads these every frame for detection calculation.
-- **Player Controller** ✅ (designed) — receives detection state changes, pushes/pops IMC_Stealth and IMC_Combat based on detection level.
+- **Player Controller** ✅ (designed) — receives detection state changes, pushes/pops IMC_Stealth based on detection level (≥25). IMC_Combat is owned by Combat System (pushed at Detected=100), not by Stealth or PC at 75.
 - **Alien AI System** ✅ (designed) — provides alien perception data (hearing, vision), patrol behavior, alert states. Without it, stealth has nothing to detect the player.
 - **Physics System** ✅ (designed) — provides surface type, weather state. Environmental modifiers depend on physics data.
 
@@ -367,7 +367,7 @@ See Movement System GDD Formula 4 for full definition. The Stealth System uses t
 
 | System | Interface Used | Expected Behavior |
 |--------|---------------|-------------------|
-| Player Controller | `GetCurrentDetectionLevel()`, `OnDetectionStateChanged()` | Pushes IMC_Stealth at ≥25, IMC_Combat at ≥75 |
+| Player Controller | `GetCurrentDetectionLevel()`, `OnDetectionStateChanged()` | Pushes IMC_Stealth at ≥25. IMC_Combat is owned by Combat System (pushed at Detected=100). |
 | Alien AI System | `GetDetectionScore(AlienID)`, `SetDetectionScore()` | Each alien reads/writes its own detection score |
 | Combat System | `OnStealthBroken()` | Triggered when detection reaches 100 |
 | HUD System | `SetDetectionLevel()`, `SetStealthState()` | Displays stealth indicator (immersive) or meter (tactical) |
@@ -425,7 +425,7 @@ See Movement System GDD Formula 4 for full definition. The Stealth System uses t
 - Visual cues are environmental: biomass glow, snow disturbance, shadow movement.
 
 **Tactical HUD (toggleable):**
-- Detection bar (top-right, small): fills from green (0) → yellow (50) → red (100).
+- Detection bar (top-right, small): color-coded: green (0–24), yellow (25–49), orange (50–74), red (75–100).
 - Current stealth state label: "Hidden", "Suspicious", "Alert", "Engaged", "Detected".
 - Per-alien detection indicators (mini dots on screen edge showing direction of detecting aliens).
 - Noise radius visualization (circle around player showing current noise propagation range).
@@ -459,7 +459,7 @@ See Movement System GDD Formula 4 for full definition. The Stealth System uses t
 | "Exhaustion noise penalty (+15)" | `design/gdd/movement-system.md` | N_exhaust when stamina = 0 | Data dependency |
 | "Noise propagation radius" | `design/gdd/movement-system.md` | Formula 4 — noise emission radius | Formula dependency |
 | "IMC_Stealth push/pop" | `design/gdd/player-controller.md` | IMC stack management, state-driven input gating | State trigger |
-| "IMC_Combat push at ≥75" | `design/gdd/player-controller.md` | Combat engagement triggers IMC_Combat | State trigger |
+| "IMC_Combat owned by Combat System (Detected=100)" | `design/gdd/combat-system.md` | Combat System pushes IMC_Combat only at Detected (100); Stealth does not push it at 75 | State trigger |
 | "Detection state for IMC routing" | `design/gdd/player-controller.md` | Stealth Mode state in PC state machine | Rule dependency |
 | "Alien perception data" | `design/gdd/alien-ai-system.md` (Not Started) | Alien hearing, vision, patrol behavior | Data dependency |
 | "Surface type queries" | `design/gdd/physics-system.md` | Surface type for noise/visual modifiers | Data dependency |
@@ -511,7 +511,7 @@ See Movement System GDD Formula 4 for full definition. The Stealth System uses t
 
 - **GIVEN** player dodges behind cover during dodge i-frame window, **WHEN** LOS is checked, **THEN** dodge does NOT break detection. Player must remain behind cover for full 5.0s LOS break duration to begin recovery.
 
-- **GIVEN** tactical HUD is enabled, **WHEN** detection level changes, **THEN** detection bar updates every frame with color-coded value (green <50, yellow 50–74, red ≥75).
+- **GIVEN** tactical HUD is enabled, **WHEN** detection level changes, **THEN** detection bar updates every frame with color-coded value (green 0–24, yellow 25–49, orange 50–74, red 75–100).
 
 ## Open Questions
 

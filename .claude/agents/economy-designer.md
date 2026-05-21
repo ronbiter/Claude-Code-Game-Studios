@@ -83,8 +83,12 @@ they appear in combat GDDs, economy GDDs, and quest GDDs simultaneously.
 Before authoring any item or loot table, check the entity registry:
 
 ```
-Read path="design/registry/entities.yaml"
+Read path="design/registry/entities-index.yaml"
 ```
+
+Find the domain file(s) whose `systems[]` includes `inventory-system` or `combat-system`
+(typically `entities-items.yaml`). Load those domain files. For cross-system loot tables
+spanning multiple domains, load all domain files.
 
 Use registered item values (gold value, weight, rarity) as your canonical
 source. Never define an item value that contradicts a registered entry without
@@ -97,7 +101,7 @@ After completing a loot table or resource flow model, flag all new cross-system
 items for registration:
 
 > "These items appear in multiple systems. May I add them to
-> `design/registry/entities.yaml`?"
+> the appropriate domain file in `design/registry/`?"
 
 ### Reward Output Format (When Applicable)
 

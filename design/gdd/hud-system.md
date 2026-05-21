@@ -146,7 +146,7 @@ Tactical mode displays the following persistent and conditional elements:
 | **Context prompts** | Center-bottom | On proximity | Player Controller | Same as Immersive mode. Label + target name. |
 | **Nearby source count** | Bottom-right (below weapon) | Every 10s | Infection Spread | Count of active infection sources within 5000cm. |
 | **Camp threat indicator** | Top-left (below health) | Every 30s | Infection Spread | Icon + text if camp cell infection level > 25. |
-| **Quick slots** | Bottom-center (above minimap in Tactical, standalone in Immersive) | Every frame | Inventory System | 4 slot icons showing assigned consumables. Shows item icon + stack count. Empty slot shows grayed background. Activated via Q/E/R/F keys. |
+| **Quick slots** | Bottom-center (above minimap in Tactical, standalone in Immersive) | Every frame | Inventory System | 4 slot icons showing assigned consumables. Shows item icon + stack count. Empty slot shows grayed background. Activated via 1/2/3/4 keys (D-pad L/R/D/U on gamepad). |
 
 **Rule 5 — Context Prompts (Both Modes)**
 
@@ -233,12 +233,14 @@ The HUD System itself is stateless — it renders based on subsystem events. How
 | **Game State Machine** | Reads | Global game state | `GetCurrentState()` — determines HUD display state |
 | **Audio System** | Writes | HUD sound effects (prompt appear, blocked action, low ammo warning) | `PlayHUDSound(EHUDSound)` |
 | **Accessibility System** | Reads | Colorblind mode, UI scale, subtitle settings | `GetAccessibilitySettings()` — modifies HUD rendering per player needs |
+| **Tutorial System** | Reads + Writes | Tutorial hint display | `ShowTutorialScreenLabel(FText HintText)`, `HideTutorialScreenLabel()` — Tutorial System calls these to show/dismiss contextual hint labels in both modes |
+| **Save/Load System** | Writes | Save indicator | `ShowSaveIndicator()`, `HideSaveIndicator()` |
 
 **Interface Contract:**
 
 ```cpp
 // HUD System public interface (C++ sketch)
-class UHUDSubsystem : public UGameInstanceSubsystem {
+class UHUDSubsystem : public ULocalPlayerSubsystem {
     // Mode query
     EHUDMode GetHUDMode(); // Immersive or Tactical (from settings)
     

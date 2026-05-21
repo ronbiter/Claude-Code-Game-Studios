@@ -2,7 +2,7 @@
 
 > **Status**: Draft
 > **Created**: 26 April 2026
-> **Last Updated**: 26 April 2026
+> **Last Updated**: 20 May 2026
 > **Source Concept**: design/gdd/game-concept.md
 > **Engine**: Unreal Engine 5.7
 
@@ -23,25 +23,25 @@ Hostile World is a third-person survival action-adventure with conspiracy invest
 | 1 | Input System | Foundation | MVP | Designed | design/gdd/input-system.md | — |
 | 2 | Physics System | Foundation | MVP | Designed | design/gdd/physics-system.md | Input |
 | 3 | Camera System | Foundation | MVP | Designed | design/gdd/camera-system.md | Input, Physics |
-| 4 | Scene Management | Foundation | MVP | Designed | design/gdd/scene-management.md | Game State Machine |
-| 5 | Game State Machine | Foundation | MVP | Designed | design/gdd/game-state-machine.md | — |
-| 6 | Save/Load System | Persistence | MVP | Not Started | — | Game State Machine |
+| 4 | Scene Management | Foundation | MVP | Needs Revision | design/gdd/scene-management.md | Game State Machine |
+| 5 | Game State Machine | Foundation | MVP | Needs Revision | design/gdd/game-state-machine.md | — |
+| 6 | Save/Load System | Persistence | MVP | Needs Revision | design/gdd/save-load-system.md | Game State Machine |
 | 7 | Player Controller | Gameplay | MVP | Designed | design/gdd/player-controller.md | Input, Physics, Camera, Health, Movement, GSM |
 | 8 | Movement System | Gameplay | MVP | Designed | design/gdd/movement-system.md | Input, Physics |
-| 9 | Health System | Gameplay | MVP | Designed | design/gdd/health-system.md | Physics, Movement, GSM, Input |
+| 9 | Health System | Gameplay | MVP | Needs Revision | design/gdd/health-system.md | Physics, Movement, GSM, Input |
 | 10 | Stealth System | Gameplay | MVP | Designed | design/gdd/stealth-system.md | Player Controller, Alien AI, Movement, Physics, Camera |
-| 11 | Combat System | Gameplay | MVP | Designed | design/gdd/combat-system.md | Player Controller, Health, Alien AI |
-| 12 | Alien AI System | Gameplay | MVP | Designed | design/gdd/alien-ai-system.md | Stealth, Combat, Infection Spread |
-| 13 | Infection Spread System | Gameplay | MVP | Designed | design/gdd/infection-spread-system.md | Scene Management, Alien AI |
-| 14 | Investigation System | Gameplay | MVP | Designed | design/gdd/investigation-system.md | Player Controller, Dialogue |
-| 15 | Dialogue System | Narrative | MVP | Designed | design/gdd/dialogue-system.md | Player Controller, Quest |
+| 11 | Combat System | Gameplay | MVP | Needs Revision | design/gdd/combat-system.md | Player Controller, Health, Alien AI |
+| 12 | Alien AI System | Gameplay | MVP | Needs Revision | design/gdd/alien-ai-system.md | Stealth, Combat, Infection Spread |
+| 13 | Infection Spread System | Gameplay | MVP | Needs Revision | design/gdd/infection-spread-system.md | Scene Management, Alien AI |
+| 14 | Investigation System | Gameplay | MVP | Needs Revision | design/gdd/investigation-system.md | Player Controller, Dialogue |
+| 15 | Dialogue System | Narrative | MVP | Needs Revision | design/gdd/dialogue-system.md | Player Controller |
 | 16 | HUD System | UI | MVP | In Design | design/gdd/hud-system.md | Player Controller, Health, Quest |
-| 17 | Inventory System | Economy | MVP | Designed | design/gdd/inventory-system.md | Player Controller, Crafting |
-| 18 | Faction Reputation System | Progression | Vertical Slice | Designed | design/gdd/faction-reputation-system.md | Dialogue, Quest |
-| 19 | Quest System | Narrative | Vertical Slice | Designed | design/gdd/quest-system.md | Dialogue |
-| 20 | Crafting System | Economy | Vertical Slice | Not Started | — | Inventory |
-| 21 | Map System | UI | Vertical Slice | Not Started | — | Scene Management |
-| 22 | Tutorial System | Meta | Vertical Slice | Not Started | — | Game State Machine |
+| 17 | Inventory System | Economy | MVP | Needs Revision | design/gdd/inventory-system.md | Player Controller, Crafting |
+| 18 | Faction Reputation System | Progression | Vertical Slice | Needs Revision | design/gdd/faction-reputation-system.md | Dialogue, Quest |
+| 19 | Quest System | Narrative | Vertical Slice | Needs Revision | design/gdd/quest-system.md | Dialogue, Faction Reputation |
+| 20 | Crafting System | Economy | Vertical Slice | Needs Revision | design/gdd/crafting-system.md | Inventory |
+| 21 | Map System | UI | Vertical Slice | Needs Revision | design/gdd/map-system.md | Scene Management |
+| 22 | Tutorial System | Meta | Vertical Slice | Needs Revision | design/gdd/tutorial-system.md | Game State Machine, Save/Load, Input, HUD |
 | 23 | Lore/Journal System | Narrative | Alpha | Not Started | — | Investigation, Quest |
 | 24 | Accessibility System | Meta | Alpha | Not Started | — | HUD |
 | 25 | Photo Mode | Meta | Full Vision | Not Started | — | Camera System |
@@ -155,7 +155,10 @@ Hostile World is a third-person survival action-adventure with conspiracy invest
 
 ## Circular Dependencies
 
-- **None found** — no circular dependency chains identified.
+- **Two two-way couplings identified** (cross-review 2026-05-20): Investigation ↔ Dialogue
+  (mutual hard/soft dependency; must be implemented together) and Dialogue ↔ Quest (Quest starts/
+  ends through Dialogue while Dialogue is driven by Quest state). Neither is a hard build-order
+  cycle, but both must be sequenced together.
 
 Proposed resolutions if cycles emerge:
 - Player Controller ↔ Combat: define Combat as a component of Player Controller to break the cycle
@@ -181,10 +184,10 @@ Proposed resolutions if cycles emerge:
 |--------|-------|
 | Total systems identified | 25 |
 | Design docs started | 17 |
-| Design docs reviewed | 0 |
-| Design docs approved | 0 |
+| Design docs reviewed | 2 |
+| Design docs approved | 1 |
 | MVP systems designed | 15 / 15 |
-| Vertical Slice systems designed | 1 / 5 |
+| Vertical Slice systems designed | 2 / 5 |
 
 ---
 

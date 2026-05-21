@@ -80,10 +80,11 @@ primary advantage over ad-hoc design — it arrives informed.
 - **Target system**: Find the system in the index. If not listed, warn:
   > "[system-name] is not in the systems index. Would you like to add it, or
   > design it as an off-index system?"
-- **Entity registry**: Read `design/registry/entities.yaml` if it exists.
-  Extract all entries referenced by or relevant to this system (grep
-  `referenced_by.*[system-name]` and `source.*[system-name]`). Hold these
-  in context as **known facts** — values that other GDDs have already
+- **Entity registry**: Read `design/registry/entities-index.yaml` if it exists.
+  Find the domain file(s) whose `systems[]` list includes the current system name.
+  Load only those domain files. If no domain matches, load all domain files.
+  Extract all entries where `referenced_by` or `source` matches this system.
+  Hold these in context as **known facts** — values that other GDDs have already
   established and this GDD must not contradict.
 - **Reflexion log**: Read `docs/consistency-failures.md` if it exists.
   Extract entries whose Domain matches this system's category. These are
@@ -706,9 +707,9 @@ Scan the completed GDD for cross-system facts that should be registered:
 - Named formulas with defined variables and output ranges
 - Named constants referenced by value in more than one place
 
-For each candidate, check if it already exists in `design/registry/entities.yaml`:
+For each candidate, check if it already exists in the domain registries:
 ```
-Grep pattern="  - name: [candidate_name]" path="design/registry/entities.yaml"
+Grep pattern="  - name: [candidate_name]" path="design/registry/" glob="entities-*.yaml"
 ```
 
 Present a summary:
@@ -722,7 +723,7 @@ Registry candidates from this GDD:
     - [constant_name] [constant]: value=[N] ← matches registry ✅
 ```
 
-Ask: "May I update `design/registry/entities.yaml` with these [N] new entries
+Ask: "May I update the appropriate domain file in `design/registry/` with these [N] new entries
 and update `referenced_by` for the existing entries?"
 
 If yes: append new entries and update `referenced_by` arrays. Never modify

@@ -1,0 +1,218 @@
+# Entity Registry — Items Domain
+#
+# PURPOSE: Weapon items + inventory formulas and constants.
+# Load when working on: inventory-system, combat-system (items).
+#
+# Part of the split registry. Entry point: design/registry/entities-index.yaml
+
+version: 1
+last_updated: "2026-05-21"
+
+items:
+  - name: item_pistol
+    status: active
+    source: design/gdd/combat-system.md
+    referenced_by:
+      - design/gdd/combat-system.md
+      - design/gdd/inventory-system.md
+    category: weapon
+    weight: 1.5
+    slot_footprint: "1x2"
+    slot_count: 2
+    ammo_type: pistol_ammo
+    magazine_capacity: 15
+    added: "2026-05-21"
+    revised: ""
+
+  - name: item_shotgun
+    status: active
+    source: design/gdd/combat-system.md
+    referenced_by:
+      - design/gdd/combat-system.md
+      - design/gdd/inventory-system.md
+    category: weapon
+    weight: 2.5
+    slot_footprint: "1x3"
+    slot_count: 3
+    ammo_type: shotgun_shells
+    magazine_capacity: 6
+    added: "2026-05-21"
+    revised: ""
+
+  - name: item_rifle
+    status: active
+    source: design/gdd/combat-system.md
+    referenced_by:
+      - design/gdd/combat-system.md
+      - design/gdd/inventory-system.md
+    category: weapon
+    weight: 3.5
+    slot_footprint: "2x2"
+    slot_count: 4
+    ammo_type: rifle_ammo
+    magazine_capacity: 20
+    added: "2026-05-21"
+    revised: ""
+
+  - name: item_melee
+    status: active
+    source: design/gdd/combat-system.md
+    referenced_by:
+      - design/gdd/combat-system.md
+      - design/gdd/inventory-system.md
+    category: weapon
+    weight: 1.0
+    slot_footprint: "1x1"
+    slot_count: 1
+    ammo_type: none
+    magazine_capacity: 0
+    added: "2026-05-21"
+    revised: ""
+
+formulas:
+  - name: can_carry
+    status: active
+    source: design/gdd/inventory-system.md
+    referenced_by:
+      - design/gdd/inventory-system.md
+    variables:
+      - SlotsUsed
+      - ItemSlots
+      - MaxSlots
+      - WeightCurrent
+      - ItemWeight
+      - MaxWeight
+    output_range: [false, true]
+    expression: "(SlotsUsed + ItemSlots ≤ MaxSlots) AND (WeightCurrent + ItemWeight ≤ MaxWeight)"
+    notes: "Boolean output. Both slot and weight limits must be satisfied to carry an item."
+    added: 2026-04-30
+    revised: ""
+
+  - name: stack_merge
+    status: active
+    source: design/gdd/inventory-system.md
+    referenced_by:
+      - design/gdd/inventory-system.md
+    variables:
+      - QuantityToAdd
+      - MaxStack
+      - CurrentStackCount
+    output_range: [0, QuantityToAdd]
+    expression: "min(QuantityToAdd, MaxStack − CurrentStackCount)"
+    notes: "Returns number of units merged into existing stack. Remaining units form new stack or stay in world."
+    added: 2026-04-30
+    revised: ""
+
+  - name: weight_after_use
+    status: active
+    source: design/gdd/inventory-system.md
+    referenced_by:
+      - design/gdd/inventory-system.md
+    variables:
+      - WeightCurrent
+      - ItemWeight
+      - QuantityConsumed
+    output_range: [0, MaxWeight]
+    expression: "WeightCurrent − (ItemWeight × QuantityConsumed)"
+    notes: "Returns new total weight after item consumption. Always ≤ previous weight."
+    added: 2026-04-30
+    revised: ""
+
+constants:
+  # ─── Inventory System Constants ────────────────────────────────────────────
+  - name: max_slots_base
+    status: active
+    source: design/gdd/inventory-system.md
+    referenced_by:
+      - design/gdd/inventory-system.md
+    value: 20
+    unit: slots
+    added: 2026-04-30
+    revised: ""
+
+  - name: max_slots_expanded
+    status: active
+    source: design/gdd/inventory-system.md
+    referenced_by:
+      - design/gdd/inventory-system.md
+    value: 30
+    unit: slots
+    added: 2026-04-30
+    revised: ""
+
+  - name: max_weight_base
+    status: active
+    source: design/gdd/inventory-system.md
+    referenced_by:
+      - design/gdd/inventory-system.md
+    value: 50
+    unit: kg
+    added: 2026-04-30
+    revised: ""
+
+  - name: max_weight_expanded
+    status: active
+    source: design/gdd/inventory-system.md
+    referenced_by:
+      - design/gdd/inventory-system.md
+    value: 70
+    unit: kg
+    added: 2026-04-30
+    revised: ""
+
+  - name: weapon_slot_count
+    status: active
+    source: design/gdd/inventory-system.md
+    referenced_by:
+      - design/gdd/inventory-system.md
+      - design/gdd/combat-system.md
+    value: 2
+    unit: slots
+    added: 2026-04-30
+    revised: ""
+    # Primary + secondary weapon slots, separate from inventory grid
+
+  - name: quick_slot_count
+    status: active
+    source: design/gdd/inventory-system.md
+    referenced_by:
+      - design/gdd/inventory-system.md
+      - design/gdd/hud-system.md
+    value: 4
+    unit: slots
+    added: 2026-04-30
+    revised: ""
+    # Quick slots for consumables (1-4 keys, D-pad directions)
+
+  - name: movement_dampen_inventory
+    status: active
+    source: design/gdd/inventory-system.md
+    referenced_by:
+      - design/gdd/inventory-system.md
+      - design/gdd/input-system.md
+    value: 0.2
+    unit: multiplier
+    added: 2026-04-30
+    revised: ""
+    # Movement scale when inventory is open (20%)
+
+  - name: cure_device_weight
+    status: active
+    source: design/gdd/inventory-system.md
+    referenced_by:
+      - design/gdd/inventory-system.md
+      - design/gdd/infection-spread-system.md
+    value: 1.0
+    unit: kg
+    added: 2026-04-30
+    revised: ""
+
+  - name: cure_device_slot_footprint
+    status: active
+    source: design/gdd/inventory-system.md
+    referenced_by:
+      - design/gdd/inventory-system.md
+    value: "1x2"
+    unit: slots
+    added: 2026-04-30
+    revised: ""

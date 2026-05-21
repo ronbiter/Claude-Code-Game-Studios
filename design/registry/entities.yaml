@@ -1,3 +1,10 @@
+# DEPRECATED — This file has been split into domain registries.
+# Use design/registry/entities-index.yaml as the entry point.
+# Domain files: entities-world.yaml, entities-items.yaml, entities-movement.yaml,
+#               entities-health.yaml, entities-infection.yaml, entities-investigation.yaml,
+#               entities-faction.yaml, entities-combat.yaml
+# This file is kept for reference only and will not be updated.
+
 # Game World Entity Registry
 #
 # PURPOSE: Single source of truth for all named game-world facts that appear
@@ -37,7 +44,7 @@
 #   Each entry: name, status, source, referenced_by[], attributes{}, added, revised
 
 version: 1
-last_updated: "2026-04-30"
+last_updated: "2026-05-20"
 
 # ─── ENTITIES ────────────────────────────────────────────────────────────────
 # Named game-world objects: enemies, NPCs, characters, factions, bosses.
@@ -124,7 +131,66 @@ entities:
 # Attribute fields: value_gold, weight, stackable, category, and any stat
 #   modifiers that another system (e.g., economy, crafting) might reference.
 
-items: []
+items:
+  - name: item_pistol
+    status: active
+    source: design/gdd/combat-system.md
+    referenced_by:
+      - design/gdd/combat-system.md
+      - design/gdd/inventory-system.md
+    category: weapon
+    weight: 1.5
+    slot_footprint: "1x2"
+    slot_count: 2
+    ammo_type: pistol_ammo
+    magazine_capacity: 15
+    added: "2026-05-21"
+    revised: ""
+
+  - name: item_shotgun
+    status: active
+    source: design/gdd/combat-system.md
+    referenced_by:
+      - design/gdd/combat-system.md
+      - design/gdd/inventory-system.md
+    category: weapon
+    weight: 2.5
+    slot_footprint: "1x3"
+    slot_count: 3
+    ammo_type: shotgun_shells
+    magazine_capacity: 6
+    added: "2026-05-21"
+    revised: ""
+
+  - name: item_rifle
+    status: active
+    source: design/gdd/combat-system.md
+    referenced_by:
+      - design/gdd/combat-system.md
+      - design/gdd/inventory-system.md
+    category: weapon
+    weight: 3.5
+    slot_footprint: "2x2"
+    slot_count: 4
+    ammo_type: rifle_ammo
+    magazine_capacity: 20
+    added: "2026-05-21"
+    revised: ""
+
+  - name: item_melee
+    status: active
+    source: design/gdd/combat-system.md
+    referenced_by:
+      - design/gdd/combat-system.md
+      - design/gdd/inventory-system.md
+    category: weapon
+    weight: 1.0
+    slot_footprint: "1x1"
+    slot_count: 1
+    ammo_type: none
+    magazine_capacity: 0
+    added: "2026-05-21"
+    revised: ""
 
 # Example:
 #
@@ -323,9 +389,10 @@ formulas:
       - P_drain
     output_range: [15.0, 17.25]
     expression: "R_sprint_base × (1.0 + P_drain)"
-    notes: "Output in stamina/s. P_drain: Operational=0, Wounded=0, Critical=0.1, NearDeath=0.15."
+    notes: "Output in stamina/s. P_drain: Operational=0, Wounded=0, Critical=0.15, NearDeath=0.15. NOTE: Critical and NearDeath currently share the same P_drain — consider differentiating NearDeath (e.g. 0.20) to preserve tier escalation."
     added: 2026-04-29
-    revised: ""
+    revised: "2026-05-19"
+    # was: Critical=0.1 — health GDD updated to 15%→17.25/s (from 10%→16.5/s) after cross-review 2026-04-30
 
   - name: injury_dodge_recovery_penalty
     status: active
@@ -525,14 +592,16 @@ formulas:
     source: design/gdd/faction-reputation-system.md
     referenced_by:
       - design/gdd/faction-reputation-system.md
-      - design/gdd/hud-system.md
+      # hud-system.md deferred to Vertical Slice — faction rep display "Not designed" per hud-system.md:68
+      # Re-add hud-system.md when HUD Vertical Slice faction display is authored
     variables:
       - rep
     output_range: ["Hunted", "Hostile", "Wary", "Unknown", "Known", "Trusted", "Allied"]
     expression: "piecewise: rep≤-76→Hunted, -75≤rep≤-51→Hostile, -50≤rep≤-26→Wary, -25≤rep≤+25→Unknown, +26≤rep≤+50→Known, +51≤rep≤+75→Trusted, rep≥+76→Allied"
-    notes: "7 tiers at 25-point intervals. Used by HUD, trade price calculation, and faction-NPC Trust floor."
+    notes: "7 tiers at 25-point intervals. Used by HUD (Vertical Slice), trade price calculation, and faction-NPC Trust floor."
     added: 2026-05-05
-    revised: ""
+    revised: "2026-05-20"
+    # was: referenced_by included hud-system.md — removed 2026-05-20 (HUD defers faction display to Vertical Slice)
 
   - name: ripple_effect
     status: active
@@ -554,13 +623,32 @@ formulas:
     source: design/gdd/faction-reputation-system.md
     referenced_by:
       - design/gdd/faction-reputation-system.md
-      - design/gdd/inventory-system.md
+      - design/gdd/inventory-system.md  # interface reference only — inventory calls OnResourceShared() and applies price via faction system; does not restate 0.85/0.70 values
     variables:
       - rep
     output_range: ["unavailable", 1.00, 0.85, 0.70]
     expression: "tier=standing_tier_from_reputation(rep); tier∈{Hunted,Hostile,Wary}→N/A, Unknown/Known→1.00, Trusted→0.85, Allied→0.70"
     notes: "Trade unavailable below Wary. Trusted: 15% discount. Allied: 30% discount."
     added: 2026-05-05
+    revised: ""
+
+  - name: disengagement_timer
+    status: active
+    source: design/gdd/combat-system.md
+    referenced_by:
+      - design/gdd/combat-system.md
+      - design/gdd/stealth-system.md      # detection decay is separate; combat exit defers to T_disengage
+      - design/gdd/alien-ai-system.md      # alien Combat/Detected state exits per T_disengage, not a local 10.0s
+    variables:
+      - T_base
+      - N_alive
+      - T_per_alien
+      - M_cover
+      - T_cover_bonus
+    output_range: [7.0, 30.0]
+    expression: "T_disengage = T_base + N_alive × T_per_alien + M_cover × T_cover_bonus"
+    notes: "Output in seconds. T_base=10.0, T_per_alien=2.0, T_cover_bonus=-3.0, N_alive clamped [0,10], M_cover boolean. SINGLE AUTHORITY for combat end — Combat System owns it; Alien AI and Stealth reference it rather than re-defining (resolves cross-review 2026-05-20-1516 B-1/B-2). Alien AI's 5.0s return-to-patrol is layered AFTER this, not a competing timer."
+    added: 2026-05-20
     revised: ""
 
 # Example:
@@ -1202,6 +1290,46 @@ constants:
     unit: slots
     added: 2026-04-30
     revised: ""
+
+  # ─── Combat / Detection State Constants ────────────────────────────────────
+  # Unified combat-state model (cross-review 2026-05-20-1516). Three distinct
+  # concepts must not be conflated: alien combat behavior (≥75), player Combat
+  # Mode / IMC_Combat (=100, Combat-owned), and the IsPlayerUnderThreat()
+  # narrative gate (≥75).
+  - name: combat_mode_threshold
+    status: active
+    source: design/gdd/combat-system.md
+    referenced_by:
+      - design/gdd/combat-system.md
+      - design/gdd/stealth-system.md
+      - design/gdd/alien-ai-system.md
+      - design/gdd/game-state-machine.md
+    value: 100
+    unit: detection_score
+    added: 2026-05-20
+    revised: ""
+    # Player Combat Mode (IMC_Combat + combat music + 65° FOV) engages ONLY at
+    # detection=100 (Detected), or when the player attacks an alien, or a patrol
+    # forces combat per Combat Rule 5. NOT at 75. Preserves "no warning before
+    # attack" (Pillar 3). Combat System is sole owner of IMC_Combat push/pop.
+
+  - name: under_threat_threshold
+    status: active
+    source: design/gdd/stealth-system.md
+    referenced_by:
+      - design/gdd/stealth-system.md
+      - design/gdd/alien-ai-system.md
+      - design/gdd/investigation-system.md
+      - design/gdd/quest-system.md
+      - design/gdd/faction-reputation-system.md
+    value: 75
+    unit: detection_score
+    added: 2026-05-20
+    revised: ""
+    # IsPlayerUnderThreat() == (detection ≥ 75). Single signal narrative systems
+    # read to defer revelations, quest-consequence delivery, and faction toasts
+    # while the player is actively hunted (Pillar 2, Earned Discovery). Backed by
+    # Alien AI blackboard bIsInCombat. Distinct from combat_mode_threshold (100).
 
 # Example:
 #

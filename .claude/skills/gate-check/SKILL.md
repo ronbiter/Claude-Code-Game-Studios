@@ -108,7 +108,7 @@ Note: in `solo` mode, director spawns (CD-PHASE-GATE, TD-PHASE-GATE, PR-PHASE-GA
 - [ ] Test framework initialized: `tests/unit/` and `tests/integration/` directories exist
 - [ ] CI/CD test workflow exists at `.github/workflows/tests.yml` (or equivalent)
 - [ ] At least one example test file exists to confirm the framework is functional
-- [ ] Master architecture document exists at `docs/architecture/architecture.md`
+- [ ] Architecture registry is populated — `docs/registry/adr-index.yaml` exists with at least 1 ADR registered
 - [ ] Architecture traceability index exists at `docs/architecture/requirements-traceability.md`
 - [ ] `/architecture-review` has been run (a review report file exists in `docs/architecture/`)
 - [ ] `design/accessibility-requirements.md` exists with accessibility tier committed
@@ -149,7 +149,7 @@ A depends on B). If any cycle is detected (e.g. A→B→A, or A→B→C→A):
 - [ ] Art bible is complete (all 9 sections) and AD-ART-BIBLE sign-off verdict is recorded in `design/art/art-bible.md`
 - [ ] Entity inventory exists at `design/assets/entity-inventory.md` (recommended — run `/asset-spec` with no arguments to generate collaboratively from GDDs + art bible)
 - [ ] All MVP-tier GDDs from systems index are complete
-- [ ] Master architecture document exists at `docs/architecture/architecture.md`
+- [ ] Architecture registry is populated — `docs/registry/adr-index.yaml` exists with at least 1 ADR registered
 - [ ] At least 3 ADRs covering Foundation-layer decisions exist in `docs/architecture/`
 - [ ] All Foundation and Core layer ADRs have status `Accepted` (not `Proposed`) — stories cannot be unblocked until their governing ADR is accepted
 - [ ] Control manifest exists at `docs/architecture/control-manifest.md`

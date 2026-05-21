@@ -1,0 +1,126 @@
+# Entity Registry — Investigation Domain
+#
+# PURPOSE: Investigation formulas + investigation/stealth detection constants.
+# Load when working on: investigation-system, stealth-system, player-controller.
+#
+# Part of the split registry. Entry point: design/registry/entities-index.yaml
+
+version: 1
+last_updated: "2026-05-21"
+
+formulas:
+  - name: thread_progress
+    status: active
+    source: design/gdd/investigation-system.md
+    referenced_by:
+      - design/gdd/investigation-system.md
+    variables:
+      - N_discovered
+      - N_total
+    output_range: [0.0, 1.0]
+    expression: "N_discovered / N_total"
+    notes: "Thread completion percentage. State thresholds: Unknown (0.0), Suspected (0.01-0.49), Confirmed (0.50-0.99), Revealed (1.0)."
+    added: 2026-04-30
+    revised: ""
+
+  - name: clue_accessibility
+    status: active
+    source: design/gdd/investigation-system.md
+    referenced_by:
+      - design/gdd/investigation-system.md
+    variables:
+      - G_combat
+      - G_stealth
+      - G_time
+      - G_progression
+    output_range: [0, 1]
+    expression: "G_combat × G_stealth × G_time × G_progression"
+    notes: "Binary output: 0 = blocked, 1 = accessible. All gates are binary (0 or 1). Clue accessible only if all gates pass."
+    added: 2026-04-30
+    revised: ""
+
+constants:
+  # ─── Investigation System Constants ────────────────────────────────────────
+  - name: context_trace_length
+    status: active
+    source: design/gdd/player-controller.md
+    referenced_by:
+      - design/gdd/player-controller.md
+      - design/gdd/investigation-system.md
+    value: 500
+    unit: cm
+    added: 2026-04-29
+    revised: "2026-04-30"
+    # Investigation System references this for physical clue discovery range
+
+  - name: env_observation_face_angle
+    status: active
+    source: design/gdd/investigation-system.md
+    referenced_by:
+      - design/gdd/investigation-system.md
+    value: 30
+    unit: degrees
+    added: 2026-04-30
+    revised: ""
+
+  - name: env_observation_hold_time
+    status: active
+    source: design/gdd/investigation-system.md
+    referenced_by:
+      - design/gdd/investigation-system.md
+    value: 2.0
+    unit: seconds
+    added: 2026-04-30
+    revised: ""
+
+  - name: env_observation_radius_min
+    status: active
+    source: design/gdd/investigation-system.md
+    referenced_by:
+      - design/gdd/investigation-system.md
+    value: 200
+    unit: cm
+    added: 2026-04-30
+    revised: ""
+
+  - name: env_observation_radius_max
+    status: active
+    source: design/gdd/investigation-system.md
+    referenced_by:
+      - design/gdd/investigation-system.md
+    value: 500
+    unit: cm
+    added: 2026-04-30
+    revised: ""
+
+  - name: revelation_deferral_check
+    status: active
+    source: design/gdd/investigation-system.md
+    referenced_by:
+      - design/gdd/investigation-system.md
+    value: 5.0
+    unit: seconds
+    added: 2026-04-30
+    revised: ""
+
+  - name: revelation_gap
+    status: active
+    source: design/gdd/investigation-system.md
+    referenced_by:
+      - design/gdd/investigation-system.md
+    value: 10.0
+    unit: seconds
+    added: 2026-04-30
+    revised: ""
+
+  - name: detection_hidden_threshold
+    status: active
+    source: design/gdd/stealth-system.md
+    referenced_by:
+      - design/gdd/stealth-system.md
+      - design/gdd/investigation-system.md
+    value: 25
+    unit: score
+    added: 2026-04-30
+    revised: ""
+    # Investigation System Stealth Gate uses this: detection < 25 = Hidden

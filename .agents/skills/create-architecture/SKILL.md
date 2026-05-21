@@ -9,8 +9,11 @@ agent: technical-director
 
 # Create Architecture
 
-This skill produces `docs/architecture/architecture.md` — the master architecture
-document that translates all approved GDDs into a concrete technical blueprint.
+This skill produces `docs/architecture/architecture-overview.md` — a lightweight
+human-readable overview (layer map, data flows, architecture principles, open questions).
+Detailed state ownership, contracts, API decisions, and forbidden patterns live in the
+domain registry files under `docs/registry/adr-{domain}.yaml`. The TR/ADR coverage
+matrix lives in `docs/architecture/architecture-traceability.md`.
 It sits between design and implementation, and must exist before sprint planning begins.
 
 **Distinct from `/architecture-decision`**: ADRs record individual point decisions.
@@ -283,15 +286,20 @@ but don't yet. Group by priority:
 
 ## Phase 7: Write the Master Architecture Document
 
-Once all sections are approved, write the complete document to
-`docs/architecture/architecture.md`.
+Once all sections are approved, write the overview document to
+`docs/architecture/architecture-overview.md`.
 
-Ask: "May I write the master architecture document to `docs/architecture/architecture.md`?"
+> **Note on scope**: Module Ownership (Phase 2) and API Boundaries (Phase 4) are
+> already registered in `docs/registry/adr-{domain}.yaml` by the `/architecture-decision`
+> skill. The ADR Audit (Phase 5) is in `docs/architecture/architecture-traceability.md`.
+> This document covers only the high-level view that doesn't belong in YAML registries.
+
+Ask: "May I write the architecture overview to `docs/architecture/architecture-overview.md`?"
 
 The document structure:
 
 ```markdown
-# [Game Name] — Master Architecture
+# [Game Name] — Architecture Overview
 
 ## Document Status
 - Version: [N]
@@ -299,6 +307,7 @@ The document structure:
 - Engine: [name + version]
 - GDDs Covered: [list]
 - ADRs Referenced: [list]
+- Registry: docs/registry/adr-index.yaml + domain files (adr-communication.yaml, adr-subsystems.yaml, adr-data.yaml, adr-input.yaml, adr-rendering.yaml)
 
 ## Engine Knowledge Gap Summary
 [Condensed from Phase 0d inventory — HIGH/MEDIUM risk domains and their implications]
@@ -306,28 +315,23 @@ The document structure:
 ## System Layer Map
 [From Phase 1]
 
-## Module Ownership
-[From Phase 2]
-
 ## Data Flow
-[From Phase 3]
-
-## API Boundaries
-[From Phase 4]
-
-## ADR Audit
-[From Phase 5]
-
-## Required ADRs
-[From Phase 6]
+[From Phase 3 — cross-system event flows, not per-module API details]
 
 ## Architecture Principles
 [3-5 key principles that govern all technical decisions for this project,
 derived from the game concept, GDDs, and technical preferences]
 
+## Required ADRs
+[From Phase 6 — grouped by priority]
+
 ## Open Questions
 [Decisions deferred — must be resolved before the relevant layer is built]
 ```
+
+> Module Ownership details → `docs/registry/adr-{domain}.yaml` (`state_ownership` + `interface_contracts` sections)
+> API Boundary details → `docs/registry/adr-{domain}.yaml` (`api_decisions` + `interface_contracts` sections)
+> TR/ADR coverage → `docs/architecture/architecture-traceability.md`
 
 ---
 
@@ -363,7 +367,7 @@ Update the Document Status section:
 - Lead Programmer Feasibility: FEASIBLE / CONCERNS ACCEPTED / REVISED
 ```
 
-Ask: "May I update the Document Status section in `docs/architecture/architecture.md` with the sign-off?"
+Ask: "May I update the Document Status section in `docs/architecture/architecture-overview.md` with the sign-off?"
 
 ---
 

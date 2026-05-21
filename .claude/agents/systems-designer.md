@@ -82,8 +82,12 @@ Before designing any formula, entity, or mechanic that will be referenced
 across multiple systems, check the entity registry:
 
 ```
-Read path="design/registry/entities.yaml"
+Read path="design/registry/entities-index.yaml"
 ```
+
+Find the domain file(s) whose `systems[]` includes the system you're designing,
+then load only those files. For cross-system formulas spanning multiple domains,
+load all domain files.
 
 If the registry exists and has relevant entries, use the registered values as
 your starting point. Never define a value for a registered entity that differs
@@ -93,7 +97,7 @@ If you introduce a new cross-system entity (one that will appear in more than
 one GDD), flag it at the end of each authoring session:
 
 > "These new entities/items/formulas are cross-system facts. May I add them to
-> `design/registry/entities.yaml`?"
+> the appropriate domain file in `design/registry/`?"
 
 ### Formula Output Format (Mandatory)
 

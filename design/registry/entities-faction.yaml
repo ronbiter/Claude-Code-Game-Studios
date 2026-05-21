@@ -1,0 +1,74 @@
+# Entity Registry — Faction Domain
+#
+# PURPOSE: Faction reputation formulas.
+# Load when working on: faction-reputation-system, quest-system, inventory-system.
+#
+# Part of the split registry. Entry point: design/registry/entities-index.yaml
+
+version: 1
+last_updated: "2026-05-21"
+
+formulas:
+  - name: faction_reputation_delta
+    status: active
+    source: design/gdd/faction-reputation-system.md
+    referenced_by:
+      - design/gdd/faction-reputation-system.md
+      - design/gdd/quest-system.md
+    variables:
+      - base_delta
+      - current_rep
+      - infection_level
+      - desperation_level
+      - K_infection
+      - K_desperation
+    output_range: [-100, +100]
+    expression: "clamp(current_rep + round(base_delta × (1.0 + K_infection × infection_level + K_desperation × desperation_level)), -100, +100)"
+    notes: "Context amplifiers K_infection=0.5, K_desperation=0.5 give max 1.5x amplification. Max amplified delta: ±75."
+    added: 2026-05-05
+    revised: ""
+
+  - name: standing_tier_from_reputation
+    status: active
+    source: design/gdd/faction-reputation-system.md
+    referenced_by:
+      - design/gdd/faction-reputation-system.md
+      # hud-system.md deferred to Vertical Slice — faction rep display "Not designed" per hud-system.md:68
+      # Re-add hud-system.md when HUD Vertical Slice faction display is authored
+    variables:
+      - rep
+    output_range: ["Hunted", "Hostile", "Wary", "Unknown", "Known", "Trusted", "Allied"]
+    expression: "piecewise: rep≤-76→Hunted, -75≤rep≤-51→Hostile, -50≤rep≤-26→Wary, -25≤rep≤+25→Unknown, +26≤rep≤+50→Known, +51≤rep≤+75→Trusted, rep≥+76→Allied"
+    notes: "7 tiers at 25-point intervals. Used by HUD (Vertical Slice), trade price calculation, and faction-NPC Trust floor."
+    added: 2026-05-05
+    revised: "2026-05-20"
+    # was: referenced_by included hud-system.md — removed 2026-05-20 (HUD defers faction display to Vertical Slice)
+
+  - name: ripple_effect
+    status: active
+    source: design/gdd/faction-reputation-system.md
+    referenced_by:
+      - design/gdd/faction-reputation-system.md
+    variables:
+      - source_delta
+      - target_rep
+      - relationship
+    output_range: [-100, +100]
+    expression: "abs_delta=|source_delta|; if abs_delta<10: ripple=0; elif abs_delta≥25: ripple=round(source_delta/2.0)×-1; else: ripple=±5(Rival)/±10(Hostile)/0(Neutral). Allied halves negative ripples."
+    notes: "Positive deltas hurt rivals (negative ripple). Negative deltas benefit rivals (positive ripple). Ripple value itself: -38 to +38."
+    added: 2026-05-05
+    revised: ""
+
+  - name: trade_price_modifier
+    status: active
+    source: design/gdd/faction-reputation-system.md
+    referenced_by:
+      - design/gdd/faction-reputation-system.md
+      - design/gdd/inventory-system.md  # interface reference only — inventory calls OnResourceShared() and applies price via faction system; does not restate 0.85/0.70 values
+    variables:
+      - rep
+    output_range: ["unavailable", 1.00, 0.85, 0.70]
+    expression: "tier=standing_tier_from_reputation(rep); tier∈{Hunted,Hostile,Wary}→N/A, Unknown/Known→1.00, Trusted→0.85, Allied→0.70"
+    notes: "Trade unavailable below Wary. Trusted: 15% discount. Allied: 30% discount."
+    added: 2026-05-05
+    revised: ""

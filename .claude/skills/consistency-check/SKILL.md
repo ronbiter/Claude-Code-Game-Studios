@@ -1,6 +1,6 @@
 ---
 name: consistency-check
-description: "Scan all GDDs against the entity registry to detect cross-document inconsistencies: same entity with different stats, same item with different values, same formula with different variables. Grep-first approach — reads registry then targets only conflicting GDD sections rather than full document reads."
+description: "Scan all GDDs against the entity registry to detect cross-document inconsistencies: same entity with different stats, same item with different values, same formula with different variables. Grep-first approach — reads entities-index.yaml then loads relevant domain files, then targets only conflicting GDD sections rather than full document reads."
 argument-hint: "[full | since-last-review | entity:<name> | item:<name>]"
 user-invocable: true
 allowed-tools: Read, Glob, Grep, Write, Edit, Bash, AskUserQuestion
@@ -10,8 +10,8 @@ model: sonnet
 # Consistency Check
 
 Detects cross-document inconsistencies by comparing all GDDs against the
-entity registry (`design/registry/entities.yaml`). Uses a grep-first approach:
-reads the registry once, then targets only the GDD sections that mention
+entity registry. Uses a grep-first approach: loads `entities-index.yaml` then
+only the relevant domain file(s), then targets only the GDD sections that mention
 registered names — no full document reads unless a conflict needs investigation.
 
 **This skill is the write-time safety net.** It catches what `/design-system`'s
@@ -38,11 +38,14 @@ catches too late.
 
 **Load the registry:**
 
-```
-Read path="design/registry/entities.yaml"
-```
+Read `design/registry/entities-index.yaml` to get the domain file list.
 
-If the file does not exist or has no entries:
+Then load domain files based on scope:
+- **`full` mode**: Load ALL domain files listed in the index.
+- **`entity:<name>` or `item:<name>` mode**: Grep the index for the domain whose `systems[]` includes the owning system, then load only that domain file. If uncertain, load all.
+- **`since-last-review` mode**: Determine in-scope GDDs first (Phase 2), then load the domain files whose `systems[]` overlaps with the in-scope GDD names.
+
+If `entities-index.yaml` does not exist or all domain files are empty:
 > "Entity registry is empty. Run `/design-system` to write GDDs — the registry
 > is populated automatically after each GDD is completed. Nothing to check yet."
 
@@ -226,7 +229,7 @@ Verdict: PASS | CONFLICTS FOUND
 ## Phase 6: Registry Corrections
 
 If stale registry entries were found, ask:
-> "May I update `design/registry/entities.yaml` to fix the [N] stale entries?"
+> "May I update `design/registry/entities-[domain].yaml` to fix the [N] stale entries?"
 
 For each stale entry:
 - Update the `value` / attribute field
@@ -235,7 +238,7 @@ For each stale entry:
 
 If new entries were found in GDDs that are not in the registry, ask:
 > "Found [N] entities/items mentioned in GDDs that aren't in the registry yet.
-> May I add them to `design/registry/entities.yaml`?"
+> May I add them to the appropriate domain file in `design/registry/`?"
 
 Only add entries that appear in more than one GDD (true cross-system facts).
 

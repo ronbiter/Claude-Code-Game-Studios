@@ -13,6 +13,13 @@ ADR Dependencies, Engine Compatibility, GDD Requirements Addressed
 - Never skip `Accepted` — stories referencing a `Proposed` ADR are auto-blocked
 - Use `/architecture-decision` to create ADRs through the guided flow
 
+**Architecture Registry:** `docs/registry/adr-index.yaml` (entry point — lightweight pointer index)
+- Load domain files on demand: `adr-communication.yaml`, `adr-subsystems.yaml`, `adr-data.yaml`, `adr-input.yaml`, `adr-rendering.yaml`
+- Default: load `adr-index.yaml` only
+- Load a domain file only when actively working on that domain
+- Never load all domain files at once unless doing a cross-domain audit (`/architecture-review`)
+- `docs/registry/architecture.yaml` is deprecated — kept for reference only, will not be updated
+
 **TR Registry:** `docs/architecture/tr-registry.yaml`
 - Stable requirement IDs (e.g. `TR-MOV-001`) that link GDD requirements to stories
 - Never renumber existing IDs — only append new ones

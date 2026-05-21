@@ -29,6 +29,29 @@ Each agent owns a specific domain, enforcing separation of concerns and quality.
     └── session-logs/            # Session audit trail (gitignored)
 ```
 
+## Context-Mode Rules (Token Protection)
+
+Context-mode is active on this project. These rules are mandatory and override default tool behavior.
+
+**Tool selection — always follow this hierarchy:**
+1. `ctx_batch_execute` — for any shell command that produces >20 lines of output
+2. `ctx_execute_file` — for reading/analyzing files (not editing). Read tool is for files you intend to Edit only.
+3. `ctx_fetch_and_index` — for all web fetches. Never use WebFetch directly.
+4. `ctx_search` — for all follow-up questions. One call, many queries.
+
+**Session start protocol:**
+- Run `ctx_search(query="recent", sort="timeline")` before asking the user for context
+- Check prior session state before loading any planning files
+
+**Session pressure protocol:**
+- If context usage exceeds 50%, run `/compact` before starting the next major task
+- Do not attempt to complete 3+ major tasks in a single bloated session
+
+**Architecture registry:**
+- Default: load `docs/registry/adr-index.yaml` only
+- Load domain files (`adr-input.yaml`, `adr-subsystems.yaml`, etc.) only when actively working on that domain
+- Never load all domain files simultaneously unless doing a cross-domain audit
+
 ## Engine Version Reference
 
 UE 5.7. LLM training cutoff: May 2025. Breaking changes: Substrate materials, PCG API, Megalights, Animation Authoring. Search engram memory for "Unreal Engine 5.7 version reference" before suggesting UE APIs. Full reference: `docs/engine-reference/unreal/VERSION.md`.
@@ -45,6 +68,27 @@ Every task follows: **Question -> Options -> Decision -> Draft -> Approval**
 
 > **First session?** If the project has no engine configured and no game concept,
 > run `/start` to begin the guided onboarding flow.
+
+## GDD Design Protocol
+
+GDDs are written in stages with mandatory gates. Do NOT write a full GDD in one pass.
+
+**Stage 1**: Player Fantasy only
+- Write the Fantasy section
+- Run Gate 1 adversarial check (see GDD template)
+- Fix fantasy if needed. Max 1 retry before stopping.
+
+**Stage 2**: Core Rules + States
+- Write Core Rules and States & Transitions
+- Run Gate 2 adversarial check (see GDD template)
+- Max 1 revision pass.
+
+**Stage 3**: Full GDD
+- Write all remaining sections (Formulas, Edge Cases, Dependencies, etc.)
+- Run lean-depth design review ONLY after Stage 1 and Stage 2 passed cleanly
+- Full 4-agent adversarial review only if lean-depth finds no structural issues
+
+**Key rule**: If Gate 1 or Gate 2 fails twice, halt the GDD entirely. Fix the design concept before resuming. Do not patch-and-continue.
 
 ## Studio Standards (search engram memory for details)
 

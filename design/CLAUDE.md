@@ -36,3 +36,25 @@ Use `/quick-design` to author.
 - Accessibility requirements: `design/ux/accessibility-requirements.md`
 
 Use `/ux-design` to author. Validate with `/ux-review` before passing to `/team-ui`.
+
+## Entity Registry (`design/registry/`)
+
+The entity registry is split into domain files for token efficiency.
+
+**Entry point:** `design/registry/entities-index.yaml` — lists all domain files.
+
+**Domain files (load on demand):**
+- `entities-world.yaml` — factions + scene/zone constants
+- `entities-items.yaml` — weapon items + inventory formulas/constants
+- `entities-movement.yaml` — movement formulas/constants
+- `entities-health.yaml` — health formulas/constants
+- `entities-infection.yaml` — infection formulas/constants
+- `entities-investigation.yaml` — investigation/stealth formulas/constants
+- `entities-faction.yaml` — faction reputation formulas
+- `entities-combat.yaml` — combat formula + detection constants
+
+**Load-on-demand rule:** Read the index first. Load only the domain file(s) whose
+`systems[]` list matches your current system. Cross-domain work
+(`/consistency-check`, `/review-all-gdds`) loads all domain files.
+
+**Never read `entities.yaml` directly** — it is deprecated and will not be updated.

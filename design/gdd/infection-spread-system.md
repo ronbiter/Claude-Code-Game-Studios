@@ -2,8 +2,8 @@
 
 > **Status**: Draft
 > **Author**: user + agents
-> **Last Updated**: 30 April 2026
-> **Last Verified**: 30 April 2026
+> **Last Updated**: 20 May 2026 (rev 2 — NEEDS REVISION blockers resolved)
+> **Last Verified**: 20 May 2026
 > **Implements Pillar**: Pillar 1 (Hostile World) — the world transforms in real time
 
 ## Summary
@@ -87,7 +87,7 @@ The player has two tools to fight infection:
 - Cells within the zone receive -8 pressure/sec (negative pressure)
 - Infection level decreases over time; cells can transition back to lower states
 - After 300 seconds, suppressant expires and infection resumes normal accumulation
-- Cures are scarce resources (Inventory System) — player must choose where and when to deploy
+- Cures are scarce resources (Inventory System) — player carries a maximum of 2 at a time. Cures are loot-only (found in the world, not craftable). Player must choose where and when to deploy. See OQ-5 resolution.
 - A cell can be affected by multiple overlapping suppressant zones (pressure stacks)
 
 **Rule 5 — Procedural Hive Spawning**
@@ -97,10 +97,11 @@ When a cell reaches infection level 100 (Hive Core state), it becomes eligible f
 - **Cooldown**: Minimum 120 seconds between hive spawns globally (prevents cascade)
 - **Cap**: Maximum 3 procedural hives per zone at any time (prevents zone saturation)
 - **Spawn check**: Every 30 seconds, the system evaluates eligible cells (level 100, no existing hive)
-- **Selection**: If multiple cells are eligible, one is chosen weighted by distance from player (farther cells have higher weight — infection spreads away from the player, creating pressure on unexplored areas)
+- **Selection**: If multiple cells are eligible, one is chosen weighted by proximity to the player (closer cells have higher weight — infection moves toward areas the player knows and cares about, reinforcing Pillar 1). Formula: W_distance = clamp(2.0 − (distance_from_player / 5000), 1.0, 2.0). At dist=0: W_distance=2.0 (maximum threat near player). At dist≥5000: W_distance=1.0 (baseline).
+- **Minimum spawn distance**: A new procedural hive must be at least K_hive_min_spawn_dist = 3000 cm from any existing hive. This prevents multi-hive cluster exploitation.
 - **Randomness**: Selected cell's exact hive position has ±200 cm random offset from cell center, constrained to valid spawn locations (flat ground, not in water, not inside buildings)
 - **Spawn VFX**: Hive emergence takes 8 seconds — biomass erupts from ground, structure grows, bioluminescence activates. Scene Management swaps to DL_Hive_Core when complete.
-- **Player notification**: No explicit UI. The player hears the hive emergence (distinctive audio event at long range) and may see the glow from distance.
+- **Player notification**: No explicit UI. The player hears the hive emergence (distinctive audio event, audible zone-wide) and feels a haptic pulse (controller rumble) on emergence start. No screen glow — the player must orient themselves using audio.
 
 **Rule 6 — Procedural Biomass Node Spawning**
 
@@ -123,12 +124,14 @@ Spore Vents are the most common and least dangerous source type:
 
 **Rule 8 — Infection Tick Performance**
 
-- Tick interval: 10 seconds (configurable)
-- Per tick: Only cells within range of at least one active source are evaluated
-- Maximum cells per tick: 25 (5×5 grid around player — cells beyond this are too distant to matter for gameplay)
-- Per-cell calculation: O(n) where n = active sources in range (typically 2–5)
-- Target CPU time per tick: <1.0ms on game thread
-- Infection data stored in `UInfectionSpreadSubsystem` (UGameInstanceSubsystem)
+The system uses a **tiered tick rate** to simulate the world transforming regardless of player position while managing CPU cost:
+
+- **Near zone** (cell center within 8,000 cm of player): tick every 10 seconds. Full simulation fidelity. Player sees and feels the world changing in real time.
+- **Far zone** (all other cells within range of at least one active source): tick every 60 seconds. Infection spreads off-screen at 1/6 speed, ensuring the world changes while the player is away.
+- **On approach**: When the player enters a far-zone cell's locality, a single analytical calculation applies accumulated infection — no tick loop: `I_catchup = clamp(I_old + (P_cell / K_spread_rate_far) × elapsed_seconds, 0, 100)`. `elapsed_seconds` is bounded to `T_catchup_max_seconds` = 1800 (30 minutes of far-zone time). Any thresholds crossed trigger state transitions and spawns; Data Layer swaps are queued and throttled via Scene Management's swap budget (not fired inline).
+- **Per-cell calculation**: O(n) where n = active sources in range (typically 2–5)
+- **Target CPU time**: <1.0 ms per near-tick sweep (every 10s), <2.0 ms per far-tick sweep (every 60s)
+- **Infection data stored in** `UInfectionSpreadSubsystem : public UWorldSubsystem` — scoped to UWorld, not UGameInstance, to ensure infection state does not persist across world transitions
 - **Pause behavior**: Infection ticks are suspended when GSM enters Paused or GameOver state. No catch-up ticks on resume — the next tick occurs at the normal interval from the resume time. Fast-travel simulation (Edge Cases) handles time-skips separately.
 
 ### States and Transitions
@@ -171,27 +174,78 @@ Clean → Exposed → Partial → Infected → Fully Infected → Hive Core
 **Interface Contract:**
 
 ```cpp
-// Infection Spread public interface (C++ sketch)
-class IInfectionSpreadSubsystem {
+// --- Type definitions ---
+
+// Unique identifier for each infection source (Hive, Node, Vent). FGuid is
+// stable across save/load and works for both author-time and procedural sources.
+using FSourceId = FGuid;
+
+// Cell infection state enum — mirrors Rule 3 state table.
+UENUM(BlueprintType)
+enum class ECellInfectionState : uint8
+{
+    Clean           UMETA(DisplayName = "Clean"),
+    Exposed         UMETA(DisplayName = "Exposed"),
+    Partial         UMETA(DisplayName = "Partial"),
+    Infected        UMETA(DisplayName = "Infected"),
+    FullyInfected   UMETA(DisplayName = "Fully Infected"),
+    HiveCore        UMETA(DisplayName = "Hive Core"),
+};
+
+// Payload fired when a cell transitions state.
+USTRUCT(BlueprintType)
+struct FCellStateChangedPayload
+{
+    GENERATED_BODY()
+    UPROPERTY() FIntPoint CellCoords;
+    UPROPERTY() ECellInfectionState OldState;
+    UPROPERTY() ECellInfectionState NewState;
+    UPROPERTY() float InfectionLevel;
+};
+
+DECLARE_MULTICAST_DELEGATE_OneParam(FCellStateChangedDelegate, const FCellStateChangedPayload&);
+
+// Save/Load blob — all data needed to restore full infection simulation state.
+USTRUCT()
+struct FInfectionStateData
+{
+    GENERATED_BODY()
+    UPROPERTY() TMap<FIntPoint, float> CellInfectionLevels;       // per-cell infection 0–100
+    UPROPERTY() TArray<FInfectionSource> ActiveSources;            // position, type, HP, ID
+    UPROPERTY() TArray<FCureZoneData> ActiveCureZones;             // position, T_remaining
+    UPROPERTY() float ElapsedGameSeconds;                           // for W_time in Formula 4
+    UPROPERTY() int32 GlobalHiveSpawnCooldownRemaining;
+};
+
+// --- Interface ---
+// UHT requires I-class name = U-class name with U→I.
+UINTERFACE(MinimalAPI, NotBlueprintable)
+class UInfectionSpreadInterface : public UInterface { GENERATED_BODY() };
+
+class IInfectionSpreadInterface
+{
+    GENERATED_BODY()
+public:
     // Cell queries
-    float GetCellInfectionLevel(FIntPoint CellCoords);
-    FCellState GetCellState(FIntPoint CellCoords);
-    TArray<FCellInfectionData> GetNearbyCellInfectionLevels(FVector Location, float Radius);
-    
+    virtual float GetCellInfectionLevel(FIntPoint CellCoords) = 0;
+    virtual ECellInfectionState GetCellState(FIntPoint CellCoords) = 0;
+    virtual TArray<FCellInfectionData> GetNearbyCellInfectionLevels(FVector Location, float Radius) = 0;
+
     // Source management
-    int32 GetActiveSourceCount(FName ZoneId);
-    bool DamageInfectionSource(FSourceId SourceId, float Amount);
-    TArray<FInfectionSource> GetSourcesInRadius(FVector Location, float Radius);
-    
+    virtual int32 GetActiveSourceCount(FName ZoneId) = 0;
+    virtual bool DamageInfectionSource(FSourceId SourceId, float Amount) = 0;  // returns true if source destroyed
+    virtual TArray<FInfectionSource> GetSourcesInRadius(FVector Location, float Radius) = 0;
+
     // Player actions
-    bool DeployCure(FVector Location); // returns false if no cure in inventory
-    FDelegateHandle SubscribeToCellStateChanged(FCellStateChangedDelegate Callback);
-    void Unsubscribe(FDelegateHandle Handle);
-    
-    // Save/Load
-    FInfectionStateData SaveInfectionState();
-    void RestoreInfectionState(const FInfectionStateData& State);
-}
+    virtual bool DeployCure(FVector Location) = 0;  // returns false if player carries 0 cures
+    virtual FDelegateHandle SubscribeToCellStateChanged(FCellStateChangedDelegate& Callback) = 0;
+    virtual void Unsubscribe(FDelegateHandle Handle) = 0;
+
+    // Save/Load is handled exclusively by IHostileSaveProvider (ADR-0013).
+    // USaveLoadSubsystem calls PopulateSaveData() / LoadFromSaveData() on the
+    // UInfectionSpreadSubsystem directly. No save/load methods are exposed on
+    // IInfectionSpreadInterface to prevent dual save paths.
+};
 ```
 
 ## Formulas
@@ -201,7 +255,7 @@ class IInfectionSpreadSubsystem {
 The `cell_infection_pressure` formula calculates total pressure on a single cell from all active sources:
 
 ```
-P_cell = Σ [ H_i × (1 - (d_i / R_i)²) × M_terrain × M_weather × M_cure ]
+P_cell = Σ_{ d_i < R_i } [ H_i × (1 - (d_i / R_i)²) × M_terrain × M_weather ]
 ```
 
 Summed over all active sources i where d_i < R_i (source is within its effective radius of the cell center).
@@ -215,11 +269,10 @@ Summed over all active sources i where d_i < R_i (source is within its effective
 | Source radius | R_i | float | 1500–5000 cm | This GDD | Effective radius per source type |
 | Terrain modifier | M_terrain | float | 0.5–1.5 | Physics System | Open ground=1.0, forest=1.3 (spores settle), water=0.5 (washed away), urban=1.2 (sheltered surfaces) |
 | Weather modifier | M_weather | float | 0.7–1.3 | This GDD | Clear=1.0, rain=0.7 (washes spores), fog=1.3 (spores linger), storm=0.8 (wind disperses) |
-| Cure modifier | M_cure | float | 0.0–1.0 | This GDD | 1.0 = no cure active. Reduced by suppressant zones: M_cure = max(0, 1 - Σ(cure_strength × overlap_factor)) |
-| Cell pressure | P_cell | float | -∞ to +∞ | Calculated | Net pressure per second. Positive = infection grows. Negative = infection recedes. |
+| Cell pressure | P_cell | float | 0 to +30 | Calculated | Source pressure per second (excluding cure effects). Always ≥ 0. Combined with P_cure in Formula 2 to get net pressure. |
 
-**Expected output range:** -20 to +30 pressure/sec (with multiple sources and cures).
-**Edge case:** If P_cell < 0 (cure active), infection level decreases. If P_cell = 0 (no sources, no cure), infection level is static.
+**Expected output range:** 0 to ~34 pressure/sec at maximum modifiers (M_terrain=1.5 × M_weather=1.3 × H_sum=17 = 33.15). Under neutral conditions (all modifiers=1.0) max is 17/sec. Source pressure only; cure effects tracked separately as P_cure in Formula 3.
+**Edge case:** P_cell = 0 if no active sources are within range. P_cell cannot be negative — negative pressure comes from P_cure (Formula 3), not from sources.
 
 **Example:** Cell center is 2000 cm from a Hive (R=5000, H=10), 1000 cm from a Node (R=2500, H=5), clear weather, open terrain, no cure:
 - Hive contribution: 10 × (1 - (2000/5000)²) × 1.0 × 1.0 × 1.0 = 10 × 0.84 = 8.4
@@ -233,7 +286,7 @@ Summed over all active sources i where d_i < R_i (source is within its effective
 The `infection_tick` formula updates a cell's infection level every 10 seconds:
 
 ```
-I_new = clamp(I_old + P_cell × T_tick, 0, 100)
+I_new = clamp(I_old + ((P_cell / K_spread_rate) + P_cure) × T_tick, 0, 100)
 ```
 
 **Variables:**
@@ -241,26 +294,26 @@ I_new = clamp(I_old + P_cell × T_tick, 0, 100)
 | Variable | Symbol | Type | Range | Source | Description |
 |----------|--------|------|-------|--------|-------------|
 | Previous infection level | I_old | float | 0–100 | This GDD | Cell's infection level before this tick |
-| Cell pressure | P_cell | float | -20 to +30 | Formula 1 | Net pressure per second |
+| Cell pressure | P_cell | float | 0 to +30 | Formula 1 | Source pressure per second (excludes cure effects) |
+| Spread rate divisor | K_spread_rate | float | 6.0 (near zone) / K_spread_rate_far=30.0 (far zone) | Tuning Knobs | Zone-dependent pacing divisor. Near-zone (within 8000cm): K_spread_rate=6.0. Far-zone: K_spread_rate_far=30.0. Separates urgency near the player from slow strategic spread off-screen. |
+| Cure pressure | P_cure | float | ≤ 0 | Formula 3 | Negative pressure from active cure devices. 0 if no cures active. |
 | Tick interval | T_tick | float | 10s (default) | This GDD | Time between infection updates |
 | New infection level | I_new | float | 0–100 | Calculated | Cell's infection level after this tick |
 
 **Expected output range:** 0 to 100.
-**Example:** I_old=30, P_cell=12.6, T_tick=10 → I_new = clamp(30 + 126, 0, 100) = **100** (cell reaches Hive Core in one tick).
+**Example (no active cure):** I_old=30, P_cell=12.6, K_spread_rate=6.0, P_cure=0, T_tick=10 → I_new = clamp(30 + (12.6/6.0 + 0) × 10, 0, 100) = clamp(30 + 21, 0, 100) = **51**.
 
-**Session-scale calibration:** A clean cell (I=0) with a single Spore Vent at cell center (d=0, max pressure):
+**Near-zone calibration (K_spread_rate=6.0):** A clean cell (I=0) with a single Spore Vent at cell center (d=0, max pressure):
 - P_cell = 2 × (1 - 0) × 1.0 × 1.0 × 1.0 = 2.0/sec
 - Per tick: 2.0 × 10 = 20 infection points
 - Ticks to reach Exposed (1): 1 tick (10 seconds)
 - Ticks to reach Partial (25): 2 ticks (20 seconds)
 - Ticks to reach Infected (50): 3 ticks (30 seconds)
 - Ticks to reach Fully Infected (75): 4 ticks (40 seconds)
-- Ticks to reach Hive Core (100): 5 ticks (50 seconds)
+- Ticks to reach Hive Core (100): 5 ticks (50 seconds) — raw source pressure before K_spread_rate division.
 
-This is too fast for session-scale. **Calibration fix:** The base pressure values in Rule 1 are per-second rates, but the effective pressure is divided by a global `K_spread_rate` tuning knob (default 6.0). This means effective pressure = P_cell / K_spread_rate.
-
-**Recalibrated example** with K_spread_rate=6.0:
-- Effective P_cell = 2.0 / 6.0 = 0.333/sec
+**Calibrated pacing example** with K_spread_rate=6.0:
+- P_cell / K_spread_rate = 2.0 / 6.0 = 0.333/sec
 - Per tick: 0.333 × 10 = 3.33 infection points
 - Ticks to reach Exposed (1): 1 tick (10 seconds)
 - Ticks to reach Partial (25): 8 ticks (80 seconds ≈ 1.3 minutes)
@@ -273,37 +326,50 @@ With a Hive at cell center (H=10, K=6.0):
 - Per tick: 16.67 infection points
 - Ticks to Hive Core: 6 ticks (60 seconds = 1 minute)
 
-This means a cell directly under a Hive becomes Hive Core in ~1 minute. A cell at the edge of a Hive's radius (5000 cm, pressure reduced to ~0) takes much longer. A cell with only distant Spore Vents may take 30+ minutes to reach Infected state. This creates the session-scale pacing: nearby infection is fast and urgent, distant infection is a slow strategic threat.
+**Far-zone calibration (K_spread_rate_far=30.0):** Far-zone cells use K_spread_rate_far=30.0 and T_tick=60s.
+
+Signature moment calibration — camp cell at 4900cm from a Hive (near radius edge):
+- P_cell = 10 × (1 − (4900/5000)²) = 10 × 0.0396 = 0.396/sec
+- Per far-zone tick: (0.396 / 30.0) × 60 = **0.792 infection points per tick**
+- Ticks to Infected (50): 63 ticks = **~63 minutes**
+- Ticks to Fully Infected (75): 95 ticks = ~95 minutes
+
+This delivers the Player Fantasy: a camp near the edge of a Hive's influence is "half-consumed" (Infected state) in ~63 minutes of real time. Nearby Hives (4000cm) reach Infected in ~14 minutes — a faster strategic threat. The distinction between "nearby Hive = urgent" and "distant Hive = slow strategic pressure" is maintained through K_spread_rate_far.
+
+Near-zone cells use K_spread_rate=6.0 — a cell directly under a Hive becomes Hive Core in ~1 minute. Far-zone cells at the edge of a Hive's radius may take 60–90 minutes to reach Infected state. This creates the session-scale pacing: nearby infection is fast and urgent, distant infection is the slow strategic threat the player returns to.
 
 ---
 
 **Formula 3 — Cure Suppressant Pressure**
 
-The `cure_suppressant` formula calculates the negative pressure from active cure zones:
+The `cure_suppressant` formula calculates the negative pressure contribution from all active cure zones on a cell:
 
 ```
-M_cure = max(0, 1 - Σ [ S_cure × (1 - (d_c / R_c)²) × T_remaining / T_max ])
+P_cure = -Σ_{ d_c < R_c } [ C_rate × (1 - (d_c / R_c)²) × T_remaining / T_max ]
 ```
+
+Summed over all active cure devices c where d_c < R_c. P_cure is always ≤ 0. When P_cure is negative, infection level decreases — cells can transition back to lower states.
 
 **Variables:**
 
 | Variable | Symbol | Type | Range | Source | Description |
 |----------|--------|------|-------|--------|-------------|
-| Cure strength | S_cure | float | 0.8 | This GDD | Base suppressant strength per cure device |
+| Cure reversal rate | C_rate | float | 8/sec | This GDD | Negative pressure per second per cure device at full strength at center |
 | Distance cure-to-cell | d_c | float | 0–R_c cm | Calculated | Distance from cure deployment point to cell center |
 | Cure radius | R_c | float | 3000 cm | This GDD | Effective radius of suppressant zone |
 | Time remaining | T_remaining | float | 0–300s | Calculated | Seconds until this cure expires |
 | Cure max duration | T_max | float | 300s | This GDD | Maximum cure duration |
-| Cure modifier | M_cure | float | 0.0–1.0 | Calculated | 1.0 = no effect, 0.0 = full suppression |
+| Cure pressure | P_cure | float | ≤ 0 | Calculated | Net negative pressure from all active cures. Stacks additively with multiple overlapping cures. 0 if no cures active. |
 
-**Expected output range:** 0.0 (full suppression) to 1.0 (no cure effect).
-**Example:** One cure deployed at cell center (d=0), 150 seconds remaining (half duration):
-- M_cure = max(0, 1 - [0.8 × (1-0) × 150/300]) = max(0, 1 - 0.4) = **0.6**
-- This reduces all incoming infection pressure by 40%.
+**Expected output range:** -8 to 0/sec per cure device. With two overlapping cures at full strength: up to -16/sec.
 
-Two overlapping cures at cell center, both at full duration:
-- M_cure = max(0, 1 - [0.8×1×1 + 0.8×1×1]) = max(0, 1 - 1.6) = **0.0**
-- Full suppression — infection cannot accumulate while both cures are active.
+**Example 1:** One cure at cell center (d=0), 150 seconds remaining:
+- P_cure = -(8 × (1 - 0) × 150/300) = -(8 × 1 × 0.5) = **-4/sec**
+- In Formula 2 (I_old=60, P_cell=5, K_spread_rate=6.0, T_tick=10): I_new = clamp(60 + (5/6.0 + (−4)) × 10, 0, 100) = clamp(60 − 31.7, 0, 100) = **28** (infection retreating)
+
+**Example 2:** Two overlapping cures at cell center, both at full duration, no active sources (P_cell=0):
+- P_cure = −(8 × 1 × 1) + −(8 × 1 × 1) = **-16/sec**
+- In Formula 2 (I_old=50, P_cell=0, T_tick=10): I_new = clamp(50 + (0 + (−16)) × 10, 0, 100) = clamp(50 − 160, 0, 100) = **0** (full cleanse in one tick)
 
 ---
 
@@ -322,26 +388,26 @@ Evaluated every 30 seconds for each eligible cell (infection level = 100, no exi
 | Variable | Symbol | Type | Range | Source | Description |
 |----------|--------|------|-------|--------|-------------|
 | Base probability | K_base | float | 0.15 | This GDD | Base chance per evaluation cycle |
-| Distance weight | W_distance | float | 1.0–2.0 | Calculated | 1.0 + (distance_from_player / 5000), clamped to 2.0. Farther cells are more likely to spawn. |
+| Distance weight | W_distance | float | 1.0–2.0 | Calculated | clamp(2.0 − (distance_from_player / 5000), 1.0, 2.0). Closer cells are more likely to spawn — infection moves toward the player. At dist=0: W_distance=2.0 (maximum). At dist≥5000cm: W_distance=1.0 (baseline). |
 | Time weight | W_time | float | 1.0–1.5 | Calculated | 1.0 + (minutes_since_game_start / 60), clamped to 1.5. Later in the game, hives spawn faster. |
 | Random factor | R_random | float | 0.5–1.5 | Random | Uniform random multiplier. Adds unpredictability. |
 | Spawn probability | P_spawn | float | 0.0–1.0 | Calculated | Chance this cell spawns a hive this cycle. |
 
-**Expected output range:** 0.0375 to 1.0 (but typically 0.1–0.4).
-**Example:** Cell 8000 cm from player, 30 minutes into game, R_random=1.2:
-- W_distance = 1.0 + (8000/5000) = 2.0 (clamped)
+**Expected output range:** 0.075 to ~0.68 at default K_base=0.15. The clamp to 1.0 only activates if K_base is tuned above ~0.22; at defaults it is dead code. Typical range: 0.1–0.5.
+**Example:** Cell 1000 cm from player (a visited camp cell), 30 minutes into game, R_random=1.2:
+- W_distance = clamp(2.0 − (1000/5000), 1.0, 2.0) = clamp(1.8, 1.0, 2.0) = 1.8
 - W_time = 1.0 + (30/60) = 1.5
-- P_spawn = clamp(0.15 × 2.0 × 1.5 × 1.2, 0, 1) = clamp(0.54, 0, 1) = **0.54**
-- 54% chance this cycle. At 30-second intervals, expected time to spawn ≈ 56 seconds.
+- P_spawn = clamp(0.15 × 1.8 × 1.5 × 1.2, 0, 1) = clamp(0.486, 0, 1) = **0.486**
+- 48.6% chance this cycle. At 30-second intervals, expected time to spawn ≈ 62 seconds.
 
 ---
 
-**Formula 5 — Biomass Node Spawn Probability**
+**Formula 5 — Biomass Node Spawn Check**
 
 The `node_spawn_probability` formula:
 
 ```
-P_node = K_node × R_random
+spawn = (R_random < K_node)
 ```
 
 Evaluated once when a cell transitions from Exposed (24) to Partial (25).
@@ -350,12 +416,11 @@ Evaluated once when a cell transitions from Exposed (24) to Partial (25).
 
 | Variable | Symbol | Type | Range | Source | Description |
 |----------|--------|------|-------|--------|-------------|
-| Base probability | K_node | float | 0.4 | This GDD | 40% chance per transition |
-| Random factor | R_random | float | 0.0–1.0 | Random | Uniform random |
-| Spawn probability | P_node | float | 0.0–0.4 | Calculated | Chance this cell spawns a Biomass Node |
+| Base probability | K_node | float | 0.4 | This GDD | Spawn threshold. 40% baseline chance. |
+| Random factor | R_random | float | 0.0–1.0 | Random | Uniform random. Node spawns if R_random < K_node. |
 
-**Expected output range:** 0.0–0.4.
-**Example:** R_random=0.7 → P_node = 0.4 × 0.7 = 0.28. Roll succeeds if random < 0.28.
+**Expected spawn rate:** 40% per eligible cell transition.
+**Example:** R_random=0.31 → 0.31 < 0.4 → Node spawns. R_random=0.72 → 0.72 < 0.4 is false → No spawn.
 
 ---
 
@@ -385,18 +450,19 @@ Weighted average of all cell infection levels in the zone, weighted by cell area
 | Scenario | Expected Behavior | Rationale |
 |----------|------------------|-----------|
 | **Player destroys the last infection source in a zone** | All cells stop accumulating. Infection levels freeze at current values. Cells do not decay. Player must deploy cures to reduce infection. | Infection is persistent — it doesn't heal on its own. This reinforces that the player must actively fight the infection, not just wait it out. |
-| **Multiple cures overlap on the same cell** | Cure modifiers stack linearly (Formula 3). Two cures at full strength on the same cell = full suppression (M_cure=0). Three+ cures = still M_cure=0 (no over-suppression bonus). | Stacking encourages strategic cure placement. Cap prevents diminishing returns exploitation. |
+| **Multiple cures overlap on the same cell** | P_cure terms stack additively (Formula 3). Two cures at full strength = P_cure = -16/sec. Three cures = P_cure = -24/sec. All additional stacking is useful — the floor is 0 (Formula 2 clamp), but each additional cure accelerates cleansing. | Stacking encourages precise cure overlapping. With carry limit of 2, double-stacking is the practical maximum in normal play. |
 | **Hive spawns while player is in the same cell** | Hive emergence VFX plays over 8 seconds. Player can attack the hive during emergence (HP builds over the 8 seconds). Hive becomes fully active after emergence completes. | Gives the player a reaction window. The hive doesn't instantly appear at full strength — the player sees it forming and can respond. |
 | **Cell reaches 100 but hive spawn is on cooldown** | Cell stays at Hive Core state (level 100) but no hive spawns yet. Hive spawns on next evaluation cycle when cooldown expires. Cell remains eligible. | Cooldown prevents cascade spawning. The cell is "ready" but waiting. |
-| **Player deploys cure in a cell with no active infection** | Cure activates but has no visible effect (M_cure reduces pressure, but pressure is already 0). Cure timer still runs. | No penalty for "wasting" a cure — but the player learns through observation that cures work best on infected cells. |
+| **Player deploys cure in a cell with no active infection** | Cure activates (P_cure = -8/sec) but infection level is already 0 — clamped to 0, no visible change. Cure timer still runs. | No penalty for "wasting" a cure — but the player learns through observation that cures work best on infected cells. |
 | **Save/load mid-tick** | Current cell infection levels, active source list, suppressant zone timers, and procedural spawn state are all saved. On load, the next tick occurs at the normal interval from load time. | Infection simulation is deterministic given state — no tick alignment needed. |
-| **Player fast-travels to a distant zone** | Infection continues ticking during fast-travel (simulated). On arrival, all cells are updated to their correct infection levels. Hive spawns that would have occurred during travel are resolved. | The world doesn't pause. Fast-traveling away from infection doesn't stop it — it may have gotten worse while you were gone. |
+| **Player fast-travels to a distant zone** | Far-zone cells continued ticking at 60s intervals during travel. On arrival, the catch-up pass applies any remaining elapsed ticks (bounded to K_catchup_max_ticks = 30 per cell). Hive spawns that would have occurred during travel are resolved. | The world doesn't pause. Fast-traveling away from infection doesn't stop it — it may have gotten worse while you were gone. |
 | **All procedural hive slots in a zone are full (3/3)** | No new hives spawn in that zone until one is destroyed. Cells at level 100 remain eligible but are skipped. | Zone cap prevents runaway infection. Player can "hold back" the infection by destroying hives. |
 | **Infection source destroyed during hive emergence** | If a Hive is destroyed during its 8-second emergence, the emergence cancels. The cell reverts to Fully Infected (75–99) state. DL_Hive_Core is not activated. | Player can interrupt hive spawning. Rewards fast reaction. |
 | **Weather changes mid-tick** | Weather modifier updates on next tick. No mid-tick recalculation. Weather change effect is felt within 10 seconds. | Tick-based update is simpler and more performant than continuous weather response. |
 | **Cell infection level exactly at threshold (e.g., 25.0)** | Threshold is inclusive on the lower bound: level ≥ 25 = Partial. Level 24.999 = Exposed. Floating-point comparison uses epsilon (0.001). | Prevents threshold flickering due to floating-point precision. |
 | **Player has no cures but needs to slow infection** | Player must destroy sources instead. This is the intended design — cures are a luxury, source destruction is the primary counter-play. | Reinforces combat/exploration loop. Cures are a safety net, not a crutch. |
 | **Cell is cleansed to 0, then re-infected by a nearby source** | Cell transitions from Clean (0) to Exposed (1), triggering Rule 7: 1–2 new Spore Vents spawn. Previously destroyed vents are permanently gone — these are new vents at new positions within the cell. | State transitions drive spawns, not individual vent identity. A cleansed cell that gets reinfected is a new infection event, not a continuation. |
+| **Cure drives cell downward through a threshold (e.g., Infected → Partial)** | Cell state reverts (e.g., Infected → Partial). Biomass Nodes spawned at the Partial→Infected transition **persist** — they are not destroyed by cure-driven reversal. Only the Data Layer reverts. Player must destroy Nodes manually. | Reversal through cures reduces infection pressure but does not undo spawned actors. Rewards persistent source destruction over repeated cure use. |
 
 ## Dependencies
 
@@ -417,7 +483,6 @@ Weighted average of all cell infection levels in the zone, weighted by cell area
 
 | System | Interface Used | Expected Behavior |
 |--------|---------------|-------------------|
-| Scene Management | `RequestDataLayerSwap(ZoneId, TargetLayer)` | Receives Data Layer swap requests when cells cross state thresholds |
 | Alien AI | `GetCellInfectionLevel(CellCoords)`, `GetZoneInfectionLevel(ZoneId)` | Reads infection levels for behavior scaling per Rule 10 of Alien AI GDD |
 | Player Controller | `SubscribeToCellStateChanged()` | Receives events for gameplay responses (camp threatened, route blocked) |
 | HUD System | `GetNearbyCellInfectionLevels()` | Renders infection heatmap in tactical mode |
@@ -429,7 +494,8 @@ Weighted average of all cell infection levels in the zone, weighted by cell area
 
 | Parameter | Default | Safe Range | Effect of Increase | Effect of Decrease |
 |-----------|---------|------------|-------------------|-------------------|
-| `K_spread_rate` | 6.0 | 3.0–12.0 | Infection spreads slower globally | Infection spreads faster, more urgent |
+| `K_spread_rate` | 6.0 | 3.0–12.0 | Near-zone infection spreads slower | Near-zone infection spreads faster, more urgent |
+| `K_spread_rate_far` | 30.0 | 12.0–60.0 | Far-zone infection much slower; signature moment delayed | Far-zone spreads faster; less time before return areas are transformed |
 | `T_tick` | 10s | 5–30s | Less frequent updates, smoother feel | More frequent updates, more responsive but higher CPU |
 | `H_hive_pressure` | 10/sec | 5–20/sec | Hives infect faster, more dangerous | Hives less threatening, easier to ignore |
 | `H_node_pressure` | 5/sec | 2–10/sec | Nodes contribute more to spread | Nodes are ambient, not threatening |
@@ -437,8 +503,12 @@ Weighted average of all cell infection levels in the zone, weighted by cell area
 | `R_hive` | 5000 cm | 3000–8000 cm | Hives affect more cells | Hives are localized threats |
 | `R_node` | 2500 cm | 1500–4000 cm | Nodes spread infection wider | Nodes are cell-local |
 | `R_vent` | 1500 cm | 800–2500 cm | Vents affect adjacent cells | Vents only affect their own cell |
-| `S_cure` | 0.8 | 0.5–1.0 | Cures are more effective | Cures are weaker, need more overlap |
-| `R_cure` | 3000 cm | 2000–5000 cm | Cures cover more area | Cures are pinpoint, need precise placement |
+| `C_cure_rate` | 8/sec | 4–16/sec | Cures reverse infection faster | Cures need longer deployment to achieve reversal |
+| `K_near_zone_radius` | 8000 cm | 5000–12000 cm | Larger near-zone, more CPU, better fidelity | Smaller near-zone, less CPU, faster degradation off-screen |
+| `T_tick_far` | 60s | 30–120s | Far cells tick less often, more CPU savings | Far cells tick more often, smaller catch-up needed on approach |
+| `T_catchup_max_seconds` | 1800s (30 min) | 600–3600s | Longer history simulated on arrival; more surprising transformations | Shorter catch-up window; less transformation during long absences |
+| `R_cure` | 3000 cm | 1500–5000 cm | Cures cover more area (easier, less tactical) | Cures are pinpoint; require precise placement |
+| `K_hive_min_spawn_dist` | 3000 cm | 1000–6000 cm | Hives more spread out; reduces cluster exploitation | Hives can spawn close together; higher local pressure |
 | `T_cure_duration` | 300s | 120–600s | Cures last longer | Cures expire quickly, more resource pressure |
 | `K_hive_spawn_base` | 0.15 | 0.05–0.30 | Hives spawn more frequently | Hives are rare, less procedural threat |
 | `K_hive_cooldown` | 120s | 60–300s | Less time between hive spawns | More breathing room between spawns |
@@ -494,8 +564,9 @@ Weighted average of all cell infection levels in the zone, weighted by cell area
 | Event | Audio Description | Range | Priority |
 |-------|------------------|-------|----------|
 | **OnCellExposed** | Subtle bio-drone fades in at cell boundary | 5000cm | Low |
+| **OnCellPartial** | Organic cracking and wet tearing sounds as biomass patches emerge (-16dB). Teaches the player (in immersive mode) that paths are changing. | 6000cm | Medium |
 | **OnCellInfected** | Bio-drone volume increases, alien ambient sounds activate | 8000cm | Medium |
-| **OnHiveSpawned** | Hive emergence audio (see table above) | Global (audible from all cells in zone) | High |
+| **OnHiveSpawned** | Hive emergence audio (see table above) + controller rumble haptic pulse on emergence start | Zone-wide (15,000 cm attenuation radius) | High |
 | **OnSourceDestroyed** | Source-specific destruction audio (see table above) | 3000cm | Medium |
 | **OnCureDeployed** | Cure deployment audio (see table above) | 3000cm | Medium |
 | **OnCellCleansed** | Bio-drone fades out, clean ambient audio returns | 5000cm | Low |
@@ -508,7 +579,7 @@ Weighted average of all cell infection levels in the zone, weighted by cell area
 | **Cell infection level (tactical)** | Minimap heatmap overlay | Every tick (10s) | Tactical HUD mode enabled |
 | **Nearby source count** | Tactical HUD, bottom-right | Every 10s | Tactical HUD mode, sources within 5000cm |
 | **Active cure zones** | Tactical HUD, blue circle on minimap | On deploy/expire | Tactical HUD mode |
-| **Hive emergence warning** | Screen edge glow (green) + audio cue | On emergence start | Player within 8000cm of emerging hive |
+| **Hive emergence warning** | Audio cue (zone-wide, 15,000 cm range) + controller rumble | On emergence start | Always (zone-wide audio + haptic) |
 | **Camp threat indicator** | Quest UI / camp HUD | Every 30s | If camp cell infection level > 25 |
 
 ## Cross-References
@@ -528,19 +599,19 @@ Weighted average of all cell infection levels in the zone, weighted by cell area
 
 - **GIVEN** a Spore Vent active at cell center, **WHEN** infection tick runs, **THEN** cell infection level increases by (H_vent / K_spread_rate) × T_tick = (2/6) × 10 = 3.33 points per tick, clamped to [0, 100].
 
-- **GIVEN** a cell at infection level 24, **WHEN** next tick pushes level to ≥ 25, **THEN** cell state transitions to Partial, DL_Infection_Partial additive layer activates, OnCellPartial event fires, and Biomass Node spawn roll occurs (40% base chance).
+- **GIVEN** a cell at infection level 24, **WHEN** next tick pushes level to ≥ 25, **THEN** cell state transitions to Partial, DL_Infection_Partial additive layer activates, OnCellPartial event fires, and a Node spawn roll executes per Formula 5. **GIVEN** RNG seeded to produce R_random=0.31, **THEN** Biomass Node spawns (0.31 < K_node=0.4). **GIVEN** RNG seeded to produce R_random=0.72, **THEN** no Node spawns.
 
 - **GIVEN** a cell at infection level 49, **WHEN** next tick pushes level to ≥ 50, **THEN** Scene Management receives `RequestDataLayerSwap(ZoneId, DL_Infected)`, cell state transitions to Infected, alien patrols become active in that cell.
 
-- **GIVEN** a cell at infection level 100 with no hive, **WHEN** 30-second spawn check runs and cooldown/cap allow, **THEN** hive spawns with probability per Formula 4. If spawn succeeds, hive emerges over 8 seconds, DL_Hive_Core activates, OnHiveSpawned audio fires.
+- **GIVEN** a cell at infection level 100 with no hive, **WHEN** 30-second spawn check runs and cooldown/cap allow, **THEN** P_spawn is calculated per Formula 4. **GIVEN** inputs matching the Formula 4 example (cell 1000cm from player, 30 min, K_base=0.15) and RNG seeded to R_spawn=0.40, **THEN** spawn occurs (0.40 < P_spawn=0.486) and hive emerges over 8 seconds, DL_Hive_Core activates, OnHiveSpawned fires. **GIVEN** R_spawn=0.60, **THEN** no spawn (0.60 > 0.486).
 
 - **GIVEN** player destroys an active infection source, **WHEN** next infection tick runs, **THEN** that source's pressure contribution is zero, affected cells show reduced P_cell, infection accumulation slows or reverses.
 
-- **GIVEN** player deploys a cure at location L, **WHEN** infection tick runs for cells within 3000cm of L, **THEN** M_cure < 1.0 for those cells, reducing net pressure. Cells with M_cure=0 (full suppression) show infection level decrease.
+- **GIVEN** player deploys a cure at location L, **WHEN** infection tick runs for cells within 1500cm of L, **THEN** P_cure < 0 for those cells, adding negative pressure. A cell at the cure center with no active sources sees I_new decrease by 80 points per tick (P_cure = -8/sec × T_tick=10, clamped to 0).
 
-- **GIVEN** two cure zones overlapping on the same cell, both at full strength, **WHEN** M_cure calculated, **THEN** M_cure = 0.0 (full suppression). Adding a third cure does not further reduce M_cure.
+- **GIVEN** two cure zones overlapping on the same cell, both at full strength and no active sources, **WHEN** infection tick runs, **THEN** P_cure = -16/sec and I_new = 0 in one tick from any starting level ≤ 160. Each additional overlapping cure stacks further (P_cure = -24/sec for three, etc.); Formula 2 clamp to 0 is the only floor.
 
-- **GIVEN** a cure zone expires (300 seconds elapsed), **WHEN** next infection tick runs, **THEN** M_cure recalculates without that cure's contribution, infection accumulation resumes at previous rate.
+- **GIVEN** a cure zone expires (T_remaining = 0), **WHEN** next infection tick runs, **THEN** P_cure recalculates excluding that cure's term. If no other cures are active, P_cure = 0 and infection accumulation resumes at the rate determined by active sources alone.
 
 **Formulas:**
 
@@ -548,15 +619,15 @@ Weighted average of all cell infection levels in the zone, weighted by cell area
 
 - **GIVEN** Formula 2 (infection tick), **WHEN** I_old=30, P_cell=12.6, T_tick=10, K_spread_rate=6.0, **THEN** effective P_cell = 12.6/6.0 = 2.1, I_new = clamp(30 + 2.1×10, 0, 100) = 51.
 
-- **GIVEN** Formula 3 (cure suppressant), **WHEN** one cure at cell center (d=0), 150s remaining, **THEN** M_cure = max(0, 1 - 0.8×1×0.5) = 0.6.
+- **GIVEN** Formula 3 (cure suppressant), **WHEN** one cure at cell center (d=0), 150s remaining, **THEN** P_cure = -(8 × 1 × 150/300) = **-4/sec**.
 
-- **GIVEN** Formula 4 (hive spawn), **WHEN** cell 8000cm from player, 30 minutes into game, R_random=1.2, **THEN** P_spawn = clamp(0.15 × 2.0 × 1.5 × 1.2, 0, 1) = 0.54.
+- **GIVEN** Formula 4 (hive spawn), **WHEN** cell 1000cm from player, 30 minutes into game, R_random=1.2, **THEN** W_distance = clamp(2.0 − 1000/5000, 1.0, 2.0) = 1.8, W_time=1.5, P_spawn = clamp(0.15 × 1.8 × 1.5 × 1.2, 0, 1) = 0.486.
 
 - **GIVEN** Formula 6 (zone aggregate), **WHEN** zone has 16 cells with infection levels [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 100, 100, 50, 25, 0], **THEN** I_zone = sum/16 = 825/16 = 51.56.
 
 **Performance:**
 
-- **GIVEN** 25 cells within player range, 5 active sources, **WHEN** infection tick runs, **THEN** total CPU time < 1.0ms on game thread.
+- **GIVEN** all near-zone cells (within 8,000 cm of player) and 5 active sources, **WHEN** near-zone tick runs (every 10s), **THEN** total CPU time < 1.0ms on game thread.
 
 - **GIVEN** max 3 procedural hives per zone, 5 nodes, 10 vents, **WHEN** all sources active, **THEN** memory footprint < 2MB for infection state data.
 
@@ -566,7 +637,7 @@ Weighted average of all cell infection levels in the zone, weighted by cell area
 
 - **GIVEN** hive emergence in progress (8 seconds), **WHEN** hive HP reaches 0 during emergence, **THEN** emergence cancels, cell reverts to Fully Infected state, DL_Hive_Core not activated.
 
-- **GIVEN** player fast-travels 10 minutes away, **WHEN** arrival completes, **THEN** all cells updated to correct infection levels (simulated ticks during travel), any hive spawns that would have occurred are resolved.
+- **GIVEN** player fast-travels 10 minutes away, **WHEN** arrival completes, **THEN** far-zone cells apply the analytical catch-up formula using elapsed_seconds=600 (bounded by T_catchup_max_seconds=1800). State transitions that would have occurred are fired. Data Layer swaps are queued and throttled via Scene Management.
 
 - **GIVEN** cell infection level at exactly 25.0, **WHEN** state queried, **THEN** state = Partial (threshold inclusive on lower bound, epsilon 0.001).
 
@@ -586,9 +657,9 @@ Weighted average of all cell infection levels in the zone, weighted by cell area
 |---|----------|-------|----------|-----------|
 | OQ-1 | Should infection spread pause when the game is paused (GSM Paused state)? Or does infection continue in real-time regardless? | design | Architecture ADR | ✅ Resolved: Ticks pause when GSM Paused. No catch-up on resume. See Rule 8. |
 | OQ-2 | What is the maximum number of World Partition cells in the largest zone? This affects worst-case tick performance. | engine-programmer | Level design finalization | |
-| OQ-3 | Should the player receive any explicit notification when a hive spawns procedurally (e.g., controller rumble, subtle screen effect), or should it be purely audio/environmental? | design | UX spec review | |
+| OQ-3 | Should the player receive any explicit notification when a hive spawns procedurally (e.g., controller rumble, subtle screen effect), or should it be purely audio/environmental? | design | UX spec review | ✅ Resolved: Audio + controller rumble. Zone-wide audio audible across the zone (15,000 cm attenuation radius). Haptic pulse fires on emergence start. No screen glow — player uses audio to orient. See Rule 5 and Audio Events. |
 | OQ-4 | Can the player observe infection spread in real-time from a distance (e.g., watching a cell transition while on a hill), or is it only noticeable when entering the cell? | design | Playtest | |
-| OQ-5 | Should cure devices be craftable (Crafting System) or only found as loot? This affects resource availability and strategic depth. | economy-designer | Crafting System GDD | |
+| OQ-5 | Should cure devices be craftable (Crafting System) or only found as loot? This affects resource availability and strategic depth. | economy-designer | Crafting System GDD | ✅ Resolved: Loot-only. Player carries a maximum of 2. Found rarely (1 per major area). Source destruction is the primary counter-play; cures are emergency tools, not a routine resource. |
 | OQ-6 | If the player returns to a cleansed cell (infection reduced to 0), should Spore Vents respawn if a nearby source re-infects the cell? Or are destroyed vents permanently gone? | design | GDD review | ✅ Resolved: New vents spawn on Clean→Exposed transition. Old vents are gone. See Edge Cases table. |
 | OQ-7 | Should the infection spread rate scale with game difficulty setting? (e.g., faster spread on Hard, slower on Easy) | design | Difficulty curve spec | |
 

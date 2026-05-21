@@ -1,0 +1,226 @@
+# Entity Registry — Infection Domain
+#
+# PURPOSE: Infection spread formulas and constants.
+# Load when working on: infection-spread-system, alien-ai-system.
+#
+# Part of the split registry. Entry point: design/registry/entities-index.yaml
+
+version: 1
+last_updated: "2026-05-21"
+
+formulas:
+  - name: cell_infection_pressure
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+    variables:
+      - H_i
+      - d_i
+      - R_i
+      - M_terrain
+      - M_weather
+      - M_cure
+    output_range: [-20, 30]
+    expression: "Σ [ H_i × (1 - (d_i / R_i)²) × M_terrain × M_weather × M_cure ]"
+    notes: "Output in pressure/sec. Summed over all active sources within radius. Negative when cure active. Divided by K_spread_rate (6.0) before accumulation."
+    added: 2026-04-30
+    revised: ""
+
+  - name: infection_tick
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+    variables:
+      - I_old
+      - P_cell
+      - T_tick
+    output_range: [0, 100]
+    expression: "clamp(I_old + (P_cell / K_spread_rate) × T_tick, 0, 100)"
+    notes: "Output is new infection level (0-100). T_tick=10s, K_spread_rate=6.0. Session-scale pacing."
+    added: 2026-04-30
+    revised: ""
+
+  - name: cure_suppressant
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+    variables:
+      - S_cure
+      - d_c
+      - R_c
+      - T_remaining
+      - T_max
+    output_range: [0.0, 1.0]
+    expression: "max(0, 1 - Σ [ S_cure × (1 - (d_c / R_c)²) × T_remaining / T_max ])"
+    notes: "Output is M_cure multiplier. 1.0 = no cure effect, 0.0 = full suppression. Stacks linearly across overlapping cures, caps at 0.0."
+    added: 2026-04-30
+    revised: ""
+
+  - name: hive_spawn_probability
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+    variables:
+      - K_base
+      - W_distance
+      - W_time
+      - R_random
+    output_range: [0.0, 1.0]
+    expression: "clamp(K_base × W_distance × W_time × R_random, 0, 1)"
+    notes: "Evaluated every 30s for eligible cells (level=100, no hive, cooldown expired, zone cap not reached). K_base=0.15."
+    added: 2026-04-30
+    revised: ""
+
+  - name: zone_infection_aggregate
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+      - design/gdd/alien-ai-system.md
+    variables:
+      - I_cell
+      - A_cell
+    output_range: [0, 100]
+    expression: "Σ (I_cell × A_cell) / Σ A_cell"
+    notes: "Weighted average of cell infection levels per zone. Resolves Alien AI OQ-8. Alien AI can use this for zone-level scaling or GetCellInfectionLevel() for per-cell precision."
+    added: 2026-04-30
+    revised: ""
+
+constants:
+  # ─── Infection Spread System Constants ─────────────────────────────────────
+  - name: infection_level_range
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+      - design/gdd/alien-ai-system.md
+    value: "0–100"
+    unit: scale
+    added: 2026-04-30
+    revised: ""
+    # Cross-system: Alien AI Rule 10 uses I_zone 0-100 for behavior scaling
+
+  - name: infection_tick_interval
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+    value: 10
+    unit: seconds
+    added: 2026-04-30
+    revised: ""
+
+  - name: infection_spread_rate
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+    value: 6.0
+    unit: divisor
+    added: 2026-04-30
+    revised: ""
+    # Global divisor applied to all pressure values for session-scale pacing
+
+  - name: cure_radius
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+    value: 3000
+    unit: cm
+    added: 2026-04-30
+    revised: ""
+
+  - name: cure_duration
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+    value: 300
+    unit: seconds
+    added: 2026-04-30
+    revised: ""
+
+  - name: cure_strength
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+    value: 0.8
+    unit: multiplier
+    added: 2026-04-30
+    revised: ""
+
+  - name: hive_spawn_cooldown
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+    value: 120
+    unit: seconds
+    added: 2026-04-30
+    revised: ""
+
+  - name: hive_zone_cap
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+    value: 3
+    unit: hives per zone
+    added: 2026-04-30
+    revised: ""
+
+  - name: hive_emerge_duration
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+    value: 8
+    unit: seconds
+    added: 2026-04-30
+    revised: ""
+
+  - name: hive_hp
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+    value: 500
+    unit: HP
+    added: 2026-04-30
+    revised: ""
+
+  - name: node_zone_cap
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+    value: 5
+    unit: nodes per zone
+    added: 2026-04-30
+    revised: ""
+
+  - name: node_hp
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+    value: 150
+    unit: HP
+    added: 2026-04-30
+    revised: ""
+
+  - name: vent_hp
+    status: active
+    source: design/gdd/infection-spread-system.md
+    referenced_by:
+      - design/gdd/infection-spread-system.md
+    value: 50
+    unit: HP
+    added: 2026-04-30
+    revised: ""

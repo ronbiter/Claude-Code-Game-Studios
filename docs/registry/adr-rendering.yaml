@@ -1,0 +1,269 @@
+# Domain: rendering | Load this file only when working on rendering architecture decisions.
+#
+# Covers: physics, collision, scene streaming, camera, animation, World Partition,
+# Data Layers, Chaos Physics, IK, Linked Anim Layers.
+#
+# ADRs in this domain: ADR-0007, ADR-0008, ADR-0009, ADR-0011
+# Note: Physics (ADR-0007) and Scene Streaming (ADR-0008) are classified here as
+# the closest fit. Create adr-physics.yaml and adr-streaming.yaml if these grow.
+
+version: 1
+last_updated: "2026-05-20"
+
+# ─── STATE OWNERSHIP ─────────────────────────────────────────────────────────
+
+state_ownership:
+  - state: physics_surface_state
+    status: active
+    owner_system: UPhysicsHelperSubsystem
+    adr: docs/architecture/adr-0007-physics-collision-architecture.md
+    interface: "GetSurfaceType(FVector Location) → EHostileSurfaceType (read-only query); CalculateFallDamage(float) → float (pure formula); OnPlayerLanded / OnImpact delegates (subscribe via AddDynamic in BeginPlay)"
+    write_access: UPhysicsHelperSubsystem-only (AHostileCharacter calls NotifyPlayerLanded/NotifyImpact; no other actor may fire these delegates)
+    referenced_by:
+      - docs/architecture/adr-0007-physics-collision-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - state: scene_streaming_state
+    status: active
+    owner_system: USceneManagementSubsystem
+    adr: docs/architecture/adr-0008-scene-streaming-architecture.md
+    interface: "GetCurrentZone() → FName (read-only); GetZoneState(FName) → FZoneState (read-only); RequestDataLayerSwap(FName ZoneId, FName TargetLayer) — only valid Data Layer write path; GetStreamingState() → FStreamingState (read-only)"
+    write_access: USceneManagementSubsystem-only (UInfectionSpreadSubsystem and others call RequestDataLayerSwap via ISceneManagementSubsystem interface; no system may call UDataLayerSubsystem directly)
+    referenced_by:
+      - docs/architecture/adr-0008-scene-streaming-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - state: camera_mode_state
+    status: active
+    owner_system: AHostileWorldPlayerCameraManager
+    adr: docs/architecture/adr-0009-camera-architecture.md
+    interface: "GetCameraMode() → EHostileCameraMode (read-only); SetCameraMode(Mode, BlendTime) — only valid mode-write path (called by AHostileWorldPlayerController only); AddShake(Class, Scale); AddRecoil(Pitch, Yaw)"
+    write_access: AHostileWorldPlayerController-only (calls SetCameraMode via ICameraSystem interface; no other actor may set camera mode directly)
+    referenced_by:
+      - docs/architecture/adr-0009-camera-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+# ─── INTERFACE CONTRACTS ──────────────────────────────────────────────────────
+
+interfaces:
+  - contract: physics_landed_event
+    status: active
+    pattern: dynamic_multicast_delegate
+    description: "AHostileCharacter::Landed() override calls UPhysicsHelperSubsystem::NotifyPlayerLanded(). Consumers subscribe to UPhysicsHelperSubsystem::OnPlayerLanded via AddDynamic() in BeginPlay(); RemoveDynamic() in EndPlay()."
+    producer: AHostileCharacter (via Landed() override)
+    consumers:
+      - UHealthComponent (fall damage calculation)
+      - UCameraShakeManager (landing shake)
+    adr: docs/architecture/adr-0007-physics-collision-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0007-physics-collision-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - contract: physics_impact_event
+    status: active
+    pattern: dynamic_multicast_delegate
+    description: "AHostileCharacter::OnComponentHit binding calls UPhysicsHelperSubsystem::NotifyImpact(). Consumers subscribe to UPhysicsHelperSubsystem::OnImpact via AddDynamic() in BeginPlay(); RemoveDynamic() in EndPlay()."
+    producer: AHostileCharacter (via OnComponentHit)
+    consumers:
+      - UCameraShakeManager (impact shake)
+    adr: docs/architecture/adr-0007-physics-collision-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0007-physics-collision-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - contract: zone_crossed_event
+    status: active
+    pattern: dynamic_multicast_delegate
+    description: "USceneManagementSubsystem broadcasts OnZoneCrossed(FName FromZone, FName ToZone) when player crosses a zone boundary (3.0s debounce). Consumers AddDynamic() in BeginPlay(); RemoveDynamic() in EndPlay()."
+    producer: USceneManagementSubsystem (via AZoneBoundaryVolume overlap + 3.0s FTimerHandle debounce)
+    consumers:
+      - Camera System (environmental camera effects on zone change)
+      - HUD System (zone name display update)
+      - Alien AI System (zone state update for behavior selection)
+    adr: docs/architecture/adr-0008-scene-streaming-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0008-scene-streaming-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - contract: camera_mode_changed_event
+    status: active
+    pattern: dynamic_multicast_delegate
+    description: "AHostileWorldPlayerCameraManager broadcasts OnCameraModeChanged(EHostileCameraMode OldMode, EHostileCameraMode NewMode) on every mode transition. Consumers bind via OnCameraModeChanged.AddDynamic() in BeginPlay(); RemoveDynamic() in EndPlay()."
+    producer: AHostileWorldPlayerCameraManager (fired in SetCameraMode() after mode enum update)
+    consumers:
+      - HUD System (mode-based widget visibility)
+      - Stealth System (FOV reads camera mode)
+      - Combat System (65° FOV on engage; recoil routing)
+    adr: docs/architecture/adr-0009-camera-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0009-camera-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - contract: movement_to_anim_state_push
+    status: active
+    pattern: dynamic_multicast_delegate
+    description: "UHostileMovementComponent pushes EHostileMovementState to UHostileWorldAnimInstance via OnMovementStateChanged(EHostileMovementState NewState) delegate. ABP subscribes in NativeBeginPlay(); unsubscribes in NativeUninitializeAnimation(). CachedMovementState in ABP is written exclusively by this callback — never read from CMC inside NativeUpdateAnimation."
+    producer: UHostileMovementComponent (fired on every EHostileMovementState transition)
+    consumers:
+      - UHostileWorldAnimInstance (updates CachedMovementState, triggers montages, switches Linked Layers)
+    adr: docs/architecture/adr-0011-animation-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0011-animation-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - contract: combat_montage_request
+    status: active
+    pattern: direct_call
+    description: "External systems (Combat System) request montage playback via AHostileCharacter proxy methods: PlayFireMontage(EHostileWeaponType), PlayReloadMontage(EHostileWeaponType), PlayMeleeMontage(). These proxy into UHostileWorldAnimInstance. No system may call GetMesh()->GetAnimInstance()->Montage_Play() directly."
+    producer: Combat System / UCombatComponent (calls AHostileCharacter proxy methods)
+    consumers:
+      - UHostileWorldAnimInstance (calls Montage_Play on UpperBodySlot)
+    adr: docs/architecture/adr-0011-animation-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0011-animation-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+# ─── PERFORMANCE BUDGETS ──────────────────────────────────────────────────────
+
+performance_budgets: []
+
+# ─── API DECISIONS ───────────────────────────────────────────────────────────
+
+api_decisions:
+  - purpose: physics_runtime
+    status: active
+    api: "Chaos Physics (UE 5.7 built-in) — UGeometryCollectionComponent for destruction, UPhysicalMaterial for surface materials"
+    not: "Legacy PhysX APIs; any pre-UE5 physics primitive types"
+    adr: docs/architecture/adr-0007-physics-collision-architecture.md
+    reason: "PhysX was removed in UE5. Chaos is the only available runtime. Geometry Collection is the Chaos-native destructible pipeline."
+    referenced_by:
+      - docs/architecture/adr-0007-physics-collision-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - purpose: custom_collision_channels
+    status: active
+    api: "EHostileCollision namespace aliases (HostileCollisionChannels.h) — ECC_GameTraceChannel1..8 mapped to Player/Alien/Infection/WorldObject/Vehicle/Projectile/Interactable/AIPerception"
+    not: "Raw ECC_GameTraceChannelN magic numbers in code; ECC_Visibility for gameplay-specific traces"
+    adr: docs/architecture/adr-0007-physics-collision-architecture.md
+    reason: "Named aliases prevent channel number collisions, make collision intent readable, and allow channel remapping via a single header change."
+    referenced_by:
+      - docs/architecture/adr-0007-physics-collision-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - purpose: world_streaming_authority
+    status: active
+    api: "World Partition (automatic, distance-based) — sole streaming authority for open world; separate UWorld for Mountain Prison via OpenLevel()"
+    not: "ALevelStreamingVolume or manual LevelStreaming actors in the open world; mixing LevelStreaming and World Partition in the same world"
+    adr: docs/architecture/adr-0008-scene-streaming-architecture.md
+    reason: "World Partition is UE5's production streaming system. Mixing LevelStreaming and World Partition in the same world produces undefined streaming behavior per Epic documentation."
+    referenced_by:
+      - docs/architecture/adr-0008-scene-streaming-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - purpose: data_layer_activation
+    status: active
+    api: "USceneManagementSubsystem::RequestDataLayerSwap(FName ZoneId, FName TargetLayer) — the only valid path for Data Layer activation/deactivation at runtime"
+    not: "Direct UDataLayerSubsystem::SetDataLayerInstanceRuntimeState() calls from any system other than USceneManagementSubsystem"
+    adr: docs/architecture/adr-0008-scene-streaming-architecture.md
+    reason: "Centralizing Data Layer writes enforces the DL swap state machine (rollback, queue, 3s debounce). Direct calls bypass rollback and produce inconsistent world state."
+    referenced_by:
+      - docs/architecture/adr-0008-scene-streaming-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - purpose: camera_mode_owner
+    status: active
+    api: "AHostileWorldPlayerCameraManager (APlayerCameraManager subclass) — owns all camera mode state, shake dispatch, recoil, and Cinematic delegation"
+    not: "ULocalPlayerSubsystem for camera mode state; UActorComponent on PlayerController for camera logic; UCameraMode stack (Lyra pattern — not a built-in engine API)"
+    adr: docs/architecture/adr-0009-camera-architecture.md
+    reason: "APlayerCameraManager is the engine's designated camera owner. UpdateViewTarget() runs in the camera manager; all engine shake and FOV APIs live on it. Any other owner requires polling the camera manager — forbidden pattern (ADR-0001)."
+    referenced_by:
+      - docs/architecture/adr-0009-camera-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - purpose: animation_blueprint_pattern
+    status: active
+    api: "UHostileWorldAnimInstance : UAnimInstance + Linked Anim Layers (UHostileCombatLayer, UHostileCoverLayer, UHostileLocomotionLayer) switched via LinkAnimClassLayers()/UnlinkAnimClassLayers()"
+    not: "Single monolithic ABP state machine with all body regions inline; dual USkeletalMeshComponent (master-pose) for body splits; Control Rig VM for full-body procedural animation"
+    adr: docs/architecture/adr-0011-animation-architecture.md
+    reason: "Linked Anim Layers eliminate combinatorial state explosion (8 movement states × 4 weapon types × cover on/off). They are the UE5-native split-body solution within a single skeletal mesh component."
+    referenced_by:
+      - docs/architecture/adr-0011-animation-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - purpose: foot_ik_implementation
+    status: active
+    api: "IK Rig runtime node in ABP post-process graph (IKRig_HostileCharacter) — two foot goals (IK_Foot_L, IK_Foot_R) with alpha-based enable/disable"
+    not: "Control Rig VM node for foot IK (heavier than IK Rig; unjustified overhead for two-bone foot IK); legacy Two Bone IK node without pelvis correction; foot IK disabled entirely"
+    adr: docs/architecture/adr-0011-animation-architecture.md
+    reason: "IK Rig runtime node is purpose-built for limb IK and lighter than Control Rig VM. movement-system.md mandates foot IK on all locomotion surfaces. Alpha-based blending on the IK node disables cleanly during Dodge/Jump/Fall without graph branching."
+    referenced_by:
+      - docs/architecture/adr-0011-animation-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+# ─── FORBIDDEN PATTERNS ──────────────────────────────────────────────────────
+
+forbidden_patterns:
+  - pattern: legacy_physx_apis
+    status: active
+    description: "No legacy PhysX primitive types, NxActor, or pre-UE5 physics APIs may be used. All physics is Chaos-native."
+    why: "PhysX was removed in UE5. Any legacy physics API will fail to compile in UE 5.7."
+    adr: docs/architecture/adr-0007-physics-collision-architecture.md
+    added: "2026-05-20"
+
+  - pattern: async_physics_with_sync_queries
+    status: active
+    description: "bTickPhysicsAsync must remain disabled (default). Do not enable async physics without revising ADR-0007."
+    why: "Enabling async physics decouples physics state from the game thread. UPhysicsHelperSubsystem::GetSurfaceType() would read stale frame-N-1 data, producing incorrect surface classification and fall damage calculation."
+    adr: docs/architecture/adr-0007-physics-collision-architecture.md
+    added: "2026-05-20"
+
+  - pattern: raw_collision_channel_numbers
+    status: active
+    description: "Raw ECC_GameTraceChannelN enum values must not be used in gameplay code. Use EHostileCollision:: namespace aliases from HostileCollisionChannels.h."
+    why: "Magic channel numbers are unreadable and break silently if DefaultEngine.ini channel order changes. Named aliases make intent explicit and centralise remapping."
+    adr: docs/architecture/adr-0007-physics-collision-architecture.md
+    added: "2026-05-20"
+
+  - pattern: manual_level_streaming_in_open_world
+    status: active
+    description: "No ALevelStreamingVolume, manual LevelStreaming actor, or ULevelStreamingDynamic calls may exist in the open world map. World Partition is the sole streaming authority."
+    why: "World Partition and manual LevelStreaming are competing authorities. Mixing them in the same world produces undefined streaming behavior: double-streaming, incorrect cell unloads, missing collision."
+    adr: docs/architecture/adr-0008-scene-streaming-architecture.md
+    added: "2026-05-20"
+
+  - pattern: direct_data_layer_write
+    status: active
+    description: "No subsystem may call UDataLayerSubsystem::SetDataLayerInstanceRuntimeState() directly. All Data Layer activation must go through USceneManagementSubsystem::RequestDataLayerSwap()."
+    why: "Direct Data Layer writes bypass the DL_Idle→Active state machine, skip rollback logic, ignore the swap queue, and bypass the 3.0s debounce. This leaves the world in an inconsistent partial state."
+    adr: docs/architecture/adr-0008-scene-streaming-architecture.md
+    added: "2026-05-20"
+
+  - pattern: anim_bp_movement_state_polling
+    status: active
+    description: "UHostileWorldAnimInstance::NativeUpdateAnimation() must not call UHostileMovementComponent::GetCurrentMovementState() to detect state transitions. CachedMovementState is updated exclusively by the OnMovementStateChanged delegate callback."
+    why: "Calling GetCurrentMovementState() each tick to detect state changes violates polling_state_in_tick (ADR-0001). Montage triggers and layer switches are event-driven, not tick-polled. Reading velocity/speed/direction for blending is permitted — that is continuous interpolation, not change detection."
+    adr: docs/architecture/adr-0011-animation-architecture.md
+    added: "2026-05-20"
+
+  - pattern: direct_montage_play
+    status: active
+    description: "External systems (Combat System, Movement System) must not call GetMesh()->GetAnimInstance()->Montage_Play() directly. All external montage requests must go through AHostileCharacter proxy methods: PlayFireMontage(), PlayReloadMontage(), PlayMeleeMontage(). Internal ABP callbacks (dodge, cover) call Montage_Play() inside UHostileWorldAnimInstance."
+    why: "Direct Montage_Play() calls bypass the UHostileWorldAnimInstance abstraction, create direct coupling between callers and ABP internals, and prevent the animation system from managing slot priority, blend weight, and montage state coherently."
+    adr: docs/architecture/adr-0011-animation-architecture.md
+    added: "2026-05-20"

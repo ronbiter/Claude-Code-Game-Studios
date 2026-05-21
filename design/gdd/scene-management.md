@@ -94,6 +94,17 @@ Session-only (regenerated on load):
 
 Physics integration: `OnObjectDestroyed()` → records destruction → activates `DL_Destroyed` → deactivates `DL_Intact` (real-time, no GSM transition).
 
+**Rule 8 — Time of Day**
+Scene Management is the sole owner of the game clock and `GetTimeOfDay()`. Time of day is a float in [0.0, 24.0) representing in-game hours. One real-time minute equals one in-game hour at default rate (1:60 real-to-game ratio, tunable). The clock advances only when GSM state is Playing — it freezes in Paused, Dialogue, Inventory, Cutscene, and GameOver. The current time is broadcast via `OnTimeOfDayChanged(float NewHour)` once per in-game hour.
+
+Four systems consume time of day:
+- **Stealth System** — Rule 4 lighting modifier (`GetTimeOfDay()` → darkness window 20:00–06:00)
+- **Investigation System** — Time Gate clues (require time-of-day range to unlock)
+- **Alien AI System** — patrol density modifier (heavier patrols 22:00–04:00)
+- **HUD System** — Tactical mode clock display
+
+No system may own or advance the clock independently. All callers read `GetTimeOfDay()` from `ISceneManagementSubsystem`.
+
 **Rule 7 — Streaming Priority**
 Priority order (highest to lowest):
 1. Player-proximate geometry (current cell)
@@ -175,6 +186,10 @@ class ISceneManagementSubsystem {
     FDelegateHandle SubscribeToDataLayerChanged(FDataLayerChangedDelegate Callback);
     void Unsubscribe(FDelegateHandle Handle);
     
+    // Time of day (Rule 8 — sole owner)
+    float GetTimeOfDay();                                              // returns 0.0–24.0 in-game hours
+    FDelegateHandle SubscribeToTimeOfDayChanged(FTimeOfDayDelegate Callback);  // fires once per in-game hour
+
     // Save/Load
     FSceneStateData SaveSceneState();
     void RestoreSceneState(const FSceneStateData& State);
@@ -301,7 +316,10 @@ Constant. When the player is within 10.08 km of a zone boundary, the system begi
 | Save/Load System | `SaveSceneState()`, `RestoreSceneState()` | Persists Data Layer states, destroyed actors, infection levels |
 | Camera System | `OnZoneCrossed(FromZone, ToZone)` | Triggers environmental camera effects on zone change |
 | Alien AI System | `GetZoneState(ZoneId)` | Reads zone infection state for AI behavior selection |
-| HUD System | `GetCurrentZone()`, `GetStreamingState()` | Displays zone name, streaming debug info |
+| HUD System | `GetCurrentZone()`, `GetStreamingState()`, `GetTimeOfDay()` | Displays zone name, streaming debug info, Tactical mode clock |
+| Stealth System | `GetTimeOfDay()` | Darkness window lighting modifier (20:00–06:00) |
+| Investigation System | `GetTimeOfDay()`, `SubscribeToTimeOfDayChanged()` | Time Gate clue unlock conditions |
+| Alien AI System | `GetTimeOfDay()` | Patrol density modifier (heavier 22:00–04:00) |
 
 ## Tuning Knobs
 

@@ -1,0 +1,162 @@
+# Domain: data | Load this file only when working on data architecture decisions.
+#
+# Covers: DataTable, DataAsset, game data strategy, serialization, save/load.
+#
+# ADRs in this domain: ADR-0005, ADR-0006
+
+version: 1
+last_updated: "2026-05-20"
+
+# ─── STATE OWNERSHIP ─────────────────────────────────────────────────────────
+
+state_ownership:
+  - state: save_data
+    status: active
+    owner_system: USaveLoadSubsystem
+    adr: docs/architecture/adr-0006-save-load-serialization.md
+    interface: "TriggerAutosave() — only valid save path; LoadSaveOnStartup() called from UGameInstance::OnStart(); RegisterProvider(IHostileSaveProvider*) for subsystem opt-in"
+    write_access: USaveLoadSubsystem-only (no subsystem may call AsyncSaveGameToSlot directly)
+    referenced_by:
+      - docs/architecture/adr-0006-save-load-serialization.md
+    added: "2026-05-20"
+    revised: ""
+
+# ─── INTERFACE CONTRACTS ──────────────────────────────────────────────────────
+
+interfaces:
+  - contract: save_provider_registration
+    status: active
+    pattern: uinterface
+    description: "Subsystems that contribute save data implement IHostileSaveProvider (PopulateSaveData / LoadFromSaveData) and call USaveLoadSubsystem::RegisterProvider(this) in their Initialize() after Collection.InitializeDependency<USaveLoadSubsystem>()."
+    producer: USaveLoadSubsystem (calls all registered providers on save/load)
+    consumers:
+      - UTutorialSubsystem (FTutorialSaveData)
+      - UQuestSubsystem (FQuestSaveData)
+      - UFactionSubsystem (FFactionSaveData)
+      - UInventorySubsystem (FInventorySaveData)
+      - UInfectionSubsystem (FInfectionSaveData)
+    adr: docs/architecture/adr-0006-save-load-serialization.md
+    referenced_by:
+      - docs/architecture/adr-0006-save-load-serialization.md
+    added: "2026-05-20"
+    revised: ""
+
+  - contract: checkpoint_save_trigger
+    status: active
+    pattern: gameplay_message_router
+    description: "ACheckpointActor broadcasts FCheckpointReachedMessage on TAG_Event_Checkpoint_Reached. USaveLoadSubsystem listens and calls TriggerAutosave(). No direct coupling between checkpoint actors and the save subsystem."
+    producer: ACheckpointActor
+    consumers:
+      - USaveLoadSubsystem
+    adr: docs/architecture/adr-0006-save-load-serialization.md
+    referenced_by:
+      - docs/architecture/adr-0006-save-load-serialization.md
+    added: "2026-05-20"
+    revised: ""
+
+# ─── PERFORMANCE BUDGETS ──────────────────────────────────────────────────────
+
+performance_budgets: []
+
+# ─── API DECISIONS ───────────────────────────────────────────────────────────
+
+api_decisions:
+  - purpose: game_data_bulk_tabular
+    status: active
+    api: "UDataTable + FTableRowBase — all bulk tabular game data (items, quests, clues, dialogue nodes, recipes, AI tuning)"
+    not: "UPrimaryDataAsset for fixed-schema row data; inline TArray<USTRUCT> hardcoded in source"
+    adr: docs/architecture/adr-0005-game-data-strategy.md
+    reason: "DataTable provides CSV/JSON import workflow for designers and O(log n) row lookup. Consistent format across all bulk data systems."
+    referenced_by:
+      - docs/architecture/adr-0005-game-data-strategy.md
+    added: "2026-05-19"
+    revised: ""
+
+  - purpose: game_data_complex_entity
+    status: active
+    api: "UPrimaryDataAsset subclass — entities requiring Blueprint subclassing or per-instance BP logic"
+    not: "UDataTable for entities with custom Blueprint behaviour per variant"
+    adr: docs/architecture/adr-0005-game-data-strategy.md
+    reason: "UPrimaryDataAsset supports inheritance and Blueprint override. Reserved for complex entities not expressible as flat rows."
+    referenced_by:
+      - docs/architecture/adr-0005-game-data-strategy.md
+    added: "2026-05-19"
+    revised: ""
+
+  - purpose: game_data_load_strategy
+    status: active
+    api: "TObjectPtr<UDataTable> UPROPERTY(EditDefaultsOnly) hard reference — all DataTable references on subsystems"
+    not: "TSoftObjectPtr<UDataTable> async streaming; StaticLoadObject/LoadObject at gameplay call sites"
+    adr: docs/architecture/adr-0005-game-data-strategy.md
+    reason: "Hard references guarantee tables are available from GameInstance::Init() at indie PC scale. Async complexity not justified until profiling shows need."
+    referenced_by:
+      - docs/architecture/adr-0005-game-data-strategy.md
+    added: "2026-05-19"
+    revised: ""
+
+  - purpose: save_serialization_format
+    status: active
+    api: "USaveGame subclass (UHostileWorldSaveGame) + UGameplayStatics::AsyncSaveGameToSlot / AsyncLoadGameFromSlot"
+    not: "FArchive custom binary; JSON file; blocking SaveGameToSlot on game thread"
+    adr: docs/architecture/adr-0006-save-load-serialization.md
+    reason: "USaveGame + UPROPERTY reflection handles versioning, Blueprint access, and schema evolution automatically. Async I/O prevents game-thread hitch at checkpoint. Single slot eliminates slot-management UI."
+    referenced_by:
+      - docs/architecture/adr-0006-save-load-serialization.md
+    added: "2026-05-20"
+    revised: ""
+
+  - purpose: save_async_delegate_binding
+    status: active
+    api: "FAsyncSaveGameToSlotDelegate::CreateUObject(this, &UClass::UFunctionMember)"
+    not: "CreateLambda or raw function pointer for async save/load callbacks"
+    adr: docs/architecture/adr-0006-save-load-serialization.md
+    reason: "Lambda captures are not GC-safe with async delegates. UFUNCTION member binding is the only safe pattern for USaveGame callbacks."
+    referenced_by:
+      - docs/architecture/adr-0006-save-load-serialization.md
+    added: "2026-05-20"
+    revised: ""
+
+# ─── FORBIDDEN PATTERNS ──────────────────────────────────────────────────────
+
+forbidden_patterns:
+  - pattern: cross_subsystem_datatable_access
+    status: active
+    description: "A subsystem must not hold a TObjectPtr<UDataTable> to a table it does not own, nor call FindRow on another subsystem's table. Request data via a method call on the owning subsystem instead."
+    why: "Cross-subsystem table access breaks state ownership (ADR-0001), creates hidden coupling, and makes subsystems untestable in isolation."
+    adr: docs/architecture/adr-0005-game-data-strategy.md
+    added: "2026-05-19"
+
+  - pattern: findrow_unchecked_result
+    status: active
+    description: "FindRow<T>() return value must be null-checked before dereferencing. Never assume a row exists."
+    why: "FindRow returns nullptr on any miss (wrong RowName, wrong struct type, empty table). An unchecked dereference crashes at runtime with no error context."
+    adr: docs/architecture/adr-0005-game-data-strategy.md
+    added: "2026-05-19"
+
+  - pattern: findrow_empty_context_string
+    status: active
+    description: "FindRow<T>(RowName, ContextString) must be called with a non-empty ContextString identifying the call site (e.g. TEXT(\"UInventorySubsystem::GetItemDefinition\"))."
+    why: "An empty ContextString makes lookup failures silent in the output log, turning data authoring errors into invisible runtime bugs."
+    adr: docs/architecture/adr-0005-game-data-strategy.md
+    added: "2026-05-19"
+
+  - pattern: direct_async_save_call
+    status: active
+    description: "No subsystem may call UGameplayStatics::AsyncSaveGameToSlot or AsyncLoadGameFromSlot directly. All save/load I/O must go through USaveLoadSubsystem::TriggerAutosave() and LoadSaveOnStartup()."
+    why: "Direct save calls from multiple subsystems produce race conditions, duplicate writes, and bypass the IHostileSaveProvider aggregation contract. USaveLoadSubsystem is the sole save authority."
+    adr: docs/architecture/adr-0006-save-load-serialization.md
+    added: "2026-05-20"
+
+  - pattern: uobject_in_save_struct
+    status: active
+    description: "No save USTRUCT (FTutorialSaveData, FQuestSaveData, FFactionSaveData, FInventorySaveData, FInfectionSaveData, or any future save sub-struct) may contain UObject*, TObjectPtr<>, or TWeakObjectPtr<> fields."
+    why: "USaveGame serialization silently drops UObject* fields — object references do not survive save/load. Only primitive types, FString, FName, TArray/TMap/TSet of primitives are safe."
+    adr: docs/architecture/adr-0006-save-load-serialization.md
+    added: "2026-05-20"
+
+  - pattern: save_lambda_delegate
+    status: active
+    description: "FAsyncSaveGameToSlotDelegate and FAsyncLoadGameFromSlotDelegate must not be bound via CreateLambda. Use CreateUObject(this, &UClass::UFunctionMember) with a UFUNCTION-marked member."
+    why: "Lambda captures are not GC-safe with async delegates. If the lambda captures a UObject* that is garbage-collected between the save call and the callback, the callback dereferences a dangling pointer — silent crash."
+    adr: docs/architecture/adr-0006-save-load-serialization.md
+    added: "2026-05-20"

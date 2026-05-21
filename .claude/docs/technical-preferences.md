@@ -45,7 +45,9 @@
 ## Forbidden Patterns
 
 <!-- Add patterns that should never appear in this project's codebase -->
-- [None configured yet — add as architectural decisions are made]
+- **polling_state_in_tick** — Tick() must not read another system's state to detect changes (ADR-0001)
+- **direct_cross_system_state_write** — Never write to state owned by another system (ADR-0001)
+- **blueprint_event_dispatchers_for_cpp_core** — Use DECLARE_DYNAMIC_MULTICAST_DELEGATE for C++ systems, not BP dispatchers (ADR-0001)
 
 ## Allowed Libraries / Addons
 
@@ -55,7 +57,9 @@
 ## Architecture Decisions Log
 
 <!-- Quick reference linking to full ADRs in docs/architecture/ -->
-- [No ADRs yet — use /architecture-decision to create one]
+- **ADR-0001** — Cross-System Communication: Dynamic Multicast Delegates (owner→subscriber) + Gameplay Message Router (global broadcast). See `docs/architecture/adr-0001-cross-system-communication.md`
+- **ADR-0002** — Game State Machine: `UHostileWorldGSM : UGameInstanceSubsystem + FTickableGameObject`. Survives level transitions. Priority-sorted queue. GameOver clears stack. See `docs/architecture/adr-0002-game-state-machine-implementation.md`
+- **ADR-0003** — Enhanced Input: PC owns all 22 IA_* bindings in `SetupInputComponent()`. IMC switches driven by GSM `OnStateEntered`. Runtime rebinding via `UEnhancedInputUserSettings` (UE5.3+). See `docs/architecture/adr-0003-enhanced-input-architecture.md`
 
 ## Engine Specialists
 

@@ -1,9 +1,5 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
-  "statusLine": {
-    "type": "command",
-    "command": "bash .agents/statusline.sh"
-  },
   "permissions": {
     "allow": [
       "Bash(git status*)",
@@ -30,6 +26,10 @@
       "Bash(type *.env*)",
       "Read(**/.env*)"
     ]
+  },
+  "enabledPlugins": {
+    "Supabase@claude-ai": false,
+    "Vercel@claude-ai": false
   },
   "skillOverrides": {
     "gsd-add-tests": "off",

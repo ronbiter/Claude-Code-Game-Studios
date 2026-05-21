@@ -59,7 +59,10 @@ Read all inputs appropriate to the mode:
 
 ### Architecture Documents
 - All in-scope ADRs in `docs/architecture/` — read every file completely
-- `docs/architecture/architecture.md` if it exists
+- `docs/registry/adr-index.yaml` — entry point (lightweight, always load)
+- For full/coverage mode: load domain files (`adr-communication.yaml`, `adr-subsystems.yaml`, `adr-data.yaml`, `adr-input.yaml`, `adr-rendering.yaml`) — not all at once unless cross-domain audit
+- `docs/architecture/architecture-overview.md` if it exists (high-level layer map + principles)
+- `docs/architecture/architecture-traceability.md` if it exists (TR/ADR coverage matrix)
 
 ### Engine Reference
 - `docs/engine-reference/[engine]/VERSION.md`
@@ -380,13 +383,17 @@ Ask: "Should I flag these GDDs for revision in the systems index?"
 
 ## Phase 6: Architecture Document Coverage
 
-If `docs/architecture/architecture.md` exists, validate it against GDDs:
+Validate the architecture registry and overview against GDDs:
 
-- Does every system from `systems-index.md` appear in the architecture layers?
+If `docs/architecture/architecture-overview.md` exists:
+- Does every system from `systems-index.md` appear in the layer map?
 - Does the data flow section cover all cross-system communication defined in GDDs?
-- Do the API boundaries support all integration requirements from GDDs?
-- Are there systems in the architecture doc that have no corresponding GDD
-  (orphaned architecture)?
+- Are there systems in the overview with no corresponding GDD (orphaned architecture)?
+
+Validate registry files (`docs/registry/adr-index.yaml` + domain files):
+- Does every accepted ADR have a domain file entry (state_ownership / interface_contracts)?
+- Do the API boundaries in domain YAMLs support all integration requirements from GDDs?
+- Are there domain registry entries referencing systems with no GDD?
 
 ---
 

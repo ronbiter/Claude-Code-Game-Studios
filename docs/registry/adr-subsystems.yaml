@@ -1,0 +1,447 @@
+# Domain: subsystems | Load this file only when working on subsystems architecture decisions.
+#
+# Covers: subsystem tiers, module structure, game instance subsystems, world subsystems,
+# game state machine, movement, AI systems, infection spread.
+#
+# ADRs in this domain: ADR-0002, ADR-0004, ADR-0010, ADR-0012, ADR-0013
+
+version: 1
+last_updated: "2026-05-20"
+
+# ─── STATE OWNERSHIP ─────────────────────────────────────────────────────────
+
+state_ownership:
+  - state: game_state_machine_stack
+    status: active
+    owner_system: UHostileWorldGSM
+    adr: docs/architecture/adr-0002-game-state-machine-implementation.md
+    interface: "GetCurrentState() → FGameplayTag (read-only); IsStateActive(FGameplayTag) → bool; RequestStateTransition(FFSMEvent) — only valid write path"
+    write_access: UHostileWorldGSM-only
+    referenced_by:
+      - docs/architecture/adr-0002-game-state-machine-implementation.md
+    added: "2026-05-15"
+    revised: ""
+
+  - state: movement_state
+    status: active
+    owner_system: UHostileMovementComponent
+    adr: docs/architecture/adr-0010-movement-architecture.md
+    interface: "GetCurrentMovementState() → EHostileMovementState (read-only); OnMovementStateChanged delegate (subscribe via AddDynamic in BeginPlay)"
+    write_access: UHostileMovementComponent-only (state resolved internally from CMC physics mode and input events; no external system may set movement state directly)
+    referenced_by:
+      - docs/architecture/adr-0010-movement-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - state: character_stamina
+    status: active
+    owner_system: AHostileCharacter
+    adr: docs/architecture/adr-0010-movement-architecture.md
+    interface: "CanSprint() → bool; CanDodge(float Cost) → bool; CanJump() → bool (read-only queries for CMC); ConsumeStamina(float) and RegenStamina(float DeltaTime) — only valid write paths, called by CMC"
+    write_access: AHostileCharacter-only via ConsumeStamina/RegenStamina (CMC calls these methods; no other system may write stamina directly)
+    referenced_by:
+      - docs/architecture/adr-0010-movement-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - state: alien_squad_state
+    status: active
+    owner_system: UAlienSquadSubsystem
+    adr: docs/architecture/adr-0012-alien-ai-system.md
+    interface: "RegisterAlien(AAlienAIController*); UnregisterAlien(AAlienAIController*); GetSquadById(int32) → TArray<TWeakObjectPtr<AAlienAIController>>; GetAllActiveAliens() → TArray<TWeakObjectPtr<AAlienAIController>>; NotifyPlayerPosition(FVector); BroadcastSquadAlert(Source, Location, Score)"
+    write_access: UAlienSquadSubsystem-only (AAlienAIController calls RegisterAlien/UnregisterAlien and BroadcastSquadAlert via subsystem; no direct TArray mutation from outside)
+    referenced_by:
+      - docs/architecture/adr-0012-alien-ai-system.md
+    added: "2026-05-20"
+    revised: ""
+
+  - state: combat_state
+    status: active
+    owner_system: UCombatSubsystem
+    adr: docs/architecture/adr-0014-combat-system-architecture.md
+    interface: "GetCombatState() → ECombatState (read-only); IsPlayerUnderThreat() → bool (detection ≥75); NotifyCombatTrigger(ECombatTriggerSource) — only valid entry path; NotifyAlienEntersCombat/LOSLost/LOSRegained/BackupCalled for alien state updates"
+    write_access: UCombatSubsystem-only (state machine transitions driven internally; UCombatComponent calls NotifyCombatTrigger() as the only external trigger path)
+    referenced_by:
+      - docs/architecture/adr-0014-combat-system-architecture.md
+    added: "2026-05-21"
+    revised: ""
+
+  - state: infection_spread_state
+    status: active
+    owner_system: UInfectionSpreadSubsystem
+    adr: docs/architecture/adr-0013-infection-spread-architecture.md
+    interface: "IInfectionSpreadInterface — GetCellInfectionLevel(FIntPoint) → float; GetCellState(FIntPoint) → ECellInfectionState; GetNearbyCellInfectionLevels(FVector, float) → TArray; GetZoneInfectionLevel(FName) → float; GetActiveSourceCount(FName) → int32; GetSourcesInRadius(FVector, float) → TArray; DamageInfectionSource(FGuid, float) → bool; DeployCure(FVector) → bool. All callers use IInfectionSpreadInterface — no direct cast to UInfectionSpreadSubsystem."
+    write_access: UInfectionSpreadSubsystem-only (FTimerHandle-driven ticks update CellData; DamageInfectionSource() and DeployCure() are the only external write paths)
+    referenced_by:
+      - docs/architecture/adr-0013-infection-spread-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+# ─── INTERFACE CONTRACTS ──────────────────────────────────────────────────────
+
+interfaces:
+  - contract: movement_state_changed_event
+    status: active
+    pattern: dynamic_multicast_delegate
+    description: "UHostileMovementComponent broadcasts OnMovementStateChanged(EHostileMovementState NewState) on every state transition. Consumers bind via AddDynamic() in BeginPlay(); RemoveDynamic() in EndPlay()."
+    producer: UHostileMovementComponent (fired on every EHostileMovementState transition)
+    consumers:
+      - Stealth System (maps state to noise level and visibility modifier)
+      - Camera System (adjusts arm length, FOV per state)
+      - Alien AI System (player velocity and state for pursuit calculations)
+      - HUD System (tactical HUD state display)
+    adr: docs/architecture/adr-0010-movement-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0010-movement-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - contract: dodge_event
+    status: active
+    pattern: dynamic_multicast_delegate
+    description: "UHostileMovementComponent fires OnDodgeStarted(float IFrameDuration) at dodge activation (0.10s wind-up complete) and OnDodgeEnded() at dodge complete (0.65s). IFrameDuration = 0.25s — Health System uses this to gate invulnerability window."
+    producer: UHostileMovementComponent (PhysDodge() phase transitions)
+    consumers:
+      - Health System (i-frame invulnerability window: immune to damage for IFrameDuration after OnDodgeStarted)
+      - Combat System (dodge window awareness for enemy attack timing)
+      - Camera System (dodge motion blur trigger)
+    adr: docs/architecture/adr-0010-movement-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0010-movement-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - contract: noise_emitted_event
+    status: active
+    pattern: dynamic_multicast_delegate
+    description: "UHostileMovementComponent fires OnNoiseEmitted(float RadiusMeters) and calls UAIPerceptionSystem::MakeNoise() simultaneously. RadiusMeters = clamp((N_base × M_surface + N_exhaust) × 1.5, 0, 200). AI hearing percept handled natively by engine; OnNoiseEmitted is for non-AI consumers only."
+    producer: UHostileMovementComponent (computed each tick when noise > 0)
+    consumers:
+      - Alien AI System (via UAIPerceptionSystem::MakeNoise — engine-native hearing percept)
+      - Stealth System (noise radius for detection range calculation)
+    adr: docs/architecture/adr-0010-movement-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0010-movement-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - contract: alien_death_event
+    status: active
+    pattern: dynamic_multicast_delegate
+    description: "AAlienCharacter fires OnAlienKilled(AAlienCharacter* AlienActor) when HP reaches 0. Consumers bind via AddDynamic() in BeginPlay(); RemoveDynamic() in EndPlay(). UAlienSquadSubsystem also binds this to call UnregisterAlien()."
+    producer: AAlienCharacter (fired when HP = 0)
+    consumers:
+      - Combat System (scoring, loot, kill tracking)
+      - UAlienSquadSubsystem (UnregisterAlien call)
+    adr: docs/architecture/adr-0012-alien-ai-system.md
+    referenced_by:
+      - docs/architecture/adr-0012-alien-ai-system.md
+    added: "2026-05-20"
+    revised: ""
+
+  - contract: squad_alert_broadcast
+    status: active
+    pattern: direct_call
+    description: "AAlienAIController calls UAlienSquadSubsystem::BroadcastSquadAlert(Source, TargetLocation, AlertScore) when detection threshold is crossed. Subsystem applies 1.5s delay, 3000cm distance filter, 1s debounce, and M_state multiplier before notifying receiving aliens via their BT Blackboard."
+    producer: AAlienAIController (calls subsystem on detection threshold crossing)
+    consumers:
+      - UAlienSquadSubsystem (owns broadcast authority, filters, and delivery)
+    adr: docs/architecture/adr-0012-alien-ai-system.md
+    referenced_by:
+      - docs/architecture/adr-0012-alien-ai-system.md
+    added: "2026-05-20"
+    revised: ""
+
+  - contract: combat_engaged_event
+    status: active
+    pattern: dynamic_multicast_delegate
+    description: "UCombatSubsystem fires OnCombatEngaged() when ECombatState transitions to CombatEntry. Fires OnCombatDisengaged() when ECombatState transitions to Disengaged. Consumers bind via AddDynamic() in BeginPlay(); RemoveDynamic() in EndPlay()."
+    producer: UCombatSubsystem (fired on ECombatState transitions)
+    consumers:
+      - HUD System (combat state indicator, threat indicators)
+      - Audio System (combat music fade-in/out)
+      - Stealth System (OnCombatDisengaged → stealth reset to zero)
+      - Investigation System (narrative-defer gate via IsPlayerUnderThreat())
+    adr: docs/architecture/adr-0014-combat-system-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0014-combat-system-architecture.md
+    added: "2026-05-21"
+    revised: ""
+
+  - contract: backup_called_event
+    status: active
+    pattern: dynamic_multicast_delegate
+    description: "UCombatSubsystem fires OnBackupCalled(int32 AlienID, FVector Location) when Alien AI reports a backup call via NotifyBackupCalled(). Consumers update threat indicators and audio."
+    producer: UCombatSubsystem (via NotifyBackupCalled() from Alien AI)
+    consumers:
+      - HUD System (threat direction indicators update)
+      - Audio System (cascading alien vocalization trigger)
+    adr: docs/architecture/adr-0014-combat-system-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0014-combat-system-architecture.md
+    added: "2026-05-21"
+    revised: ""
+
+  - contract: cell_state_changed_event
+    status: active
+    pattern: dynamic_multicast_delegate
+    description: "UInfectionSpreadSubsystem exposes FCellStateChangedDelegate OnCellStateChanged as a public UPROPERTY. Consumers call OnCellStateChanged.AddUObject(this, &...) in BeginPlay/Initialize(); RemoveDynamic/Remove() in EndPlay/Deinitialize(). Payload: FCellStateChangedPayload (CellCoords, OldState, NewState, InfectionLevel)."
+    producer: UInfectionSpreadSubsystem (fired on every ECellInfectionState transition)
+    consumers:
+      - AHostileWorldPlayerController (camp threatened, route blocked events)
+      - UHUDSubsystem (tactical HUD infection heatmap update)
+    adr: docs/architecture/adr-0013-infection-spread-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0013-infection-spread-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - contract: hive_spawned_broadcast
+    status: active
+    pattern: gameplay_message_router
+    description: "UInfectionSpreadSubsystem broadcasts FHiveSpawnedMessage on TAG_Event_Hive_Spawned when a procedural hive completes spawning. Zone-wide (15,000 cm audio attenuation). Consumers use UGameplayMessageSubsystem::RegisterListener<FHiveSpawnedMessage>(TAG_Event_Hive_Spawned, ...)."
+    producer: UInfectionSpreadSubsystem (EvaluateHiveSpawns() on successful spawn)
+    consumers:
+      - Audio System (hive emergence SFX + controller rumble)
+      - Quest System (hive-related objective tracking)
+    adr: docs/architecture/adr-0013-infection-spread-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0013-infection-spread-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+# ─── PERFORMANCE BUDGETS ──────────────────────────────────────────────────────
+
+performance_budgets:
+  - system: alien_ai
+    status: active
+    budget_ms_per_alien: 0.5
+    budget_ms_total: 4.0
+    alien_count: 8
+    target_fps: 60
+    platform: PC
+    breakdown: "BT tick <0.15ms; AI Perception <0.05ms; EQS query (when active) <0.10ms; Navigation <0.10ms; other <0.10ms"
+    adr: docs/architecture/adr-0012-alien-ai-system.md
+    referenced_by:
+      - docs/architecture/adr-0012-alien-ai-system.md
+    added: "2026-05-20"
+    revised: ""
+
+# ─── API DECISIONS ───────────────────────────────────────────────────────────
+
+api_decisions:
+  - purpose: game_state_machine_ownership
+    status: active
+    api: "UGameInstanceSubsystem (UHostileWorldGSM) + FTickableGameObject"
+    not: "AGameMode-owned component, UWorldSubsystem, static singleton pointer"
+    adr: docs/architecture/adr-0002-game-state-machine-implementation.md
+    reason: "Survives level transitions (Loading state spans them). AGameMode is destroyed between loads. UGameInstanceSubsystem lives for the full game session."
+    referenced_by:
+      - docs/architecture/adr-0002-game-state-machine-implementation.md
+    added: "2026-05-15"
+    revised: ""
+
+  - purpose: subsystem_session_tier
+    status: active
+    api: "UGameInstanceSubsystem — UQuestSubsystem, UFactionSubsystem, USaveLoadSubsystem, UInventorySubsystem, UHostileWorldGSM"
+    not: "UWorldSubsystem or ULocalPlayerSubsystem for state that must survive level transitions"
+    adr: docs/architecture/adr-0004-subsystem-module-architecture.md
+    reason: "Session-tier systems carry state across level transitions. UGameInstanceSubsystem lives for the full play session. NOTE: UInfectionSpreadSubsystem was incorrectly listed here — corrected to UWorldSubsystem by ADR-0013."
+    referenced_by:
+      - docs/architecture/adr-0004-subsystem-module-architecture.md
+      - docs/architecture/adr-0013-infection-spread-architecture.md
+    added: "2026-05-19"
+    revised: "2026-05-20"
+
+  - purpose: subsystem_world_tier
+    status: active
+    api: "UWorldSubsystem — UInfectionSpreadSubsystem, UAlienSquadSubsystem, UInvestigationSubsystem, UDialogueSubsystem, UCombatSubsystem"
+    not: "UGameInstanceSubsystem for state that must reset on level transition"
+    adr: docs/architecture/adr-0004-subsystem-module-architecture.md
+    reason: "World-tier systems hold per-level state. UWorldSubsystem is auto-destroyed on level transition; Deinitialize() fires before world teardown. UInfectionSpreadSubsystem added by ADR-0013; UCombatSubsystem added by ADR-0014 (combat state resets on zone transition per GDD edge case)."
+    referenced_by:
+      - docs/architecture/adr-0004-subsystem-module-architecture.md
+      - docs/architecture/adr-0013-infection-spread-architecture.md
+      - docs/architecture/adr-0014-combat-system-architecture.md
+    added: "2026-05-19"
+    revised: "2026-05-21"
+
+  - purpose: subsystem_player_tier
+    status: active
+    api: "ULocalPlayerSubsystem — UHUDSubsystem"
+    not: "UGameInstanceSubsystem for viewport-bound UI state"
+    adr: docs/architecture/adr-0004-subsystem-module-architecture.md
+    reason: "Player-tier systems are viewport-bound. Access from AHUD requires GetOwningPlayerController()->GetLocalPlayer()->GetSubsystem<T>()."
+    referenced_by:
+      - docs/architecture/adr-0004-subsystem-module-architecture.md
+    added: "2026-05-19"
+    revised: ""
+
+  - purpose: per_actor_state
+    status: active
+    api: "UActorComponent — UHealthComponent, UStealthComponent, UMovementComponent (custom), UCombatComponent"
+    not: "UGameInstanceSubsystem or UWorldSubsystem for per-actor state"
+    adr: docs/architecture/adr-0004-subsystem-module-architecture.md
+    reason: "Per-actor behaviour lives and dies with the owning AActor. Subsystems are for shared/coordination state, not per-instance behaviour."
+    referenced_by:
+      - docs/architecture/adr-0004-subsystem-module-architecture.md
+    added: "2026-05-19"
+    revised: ""
+
+  - purpose: primary_game_module
+    status: active
+    api: "HostileWorld — single primary module; all subsystems and gameplay classes in Source/HostileWorld/"
+    not: "Feature sub-modules per system (HostileWorldGSM, HostileWorldAI, etc.)"
+    adr: docs/architecture/adr-0004-subsystem-module-architecture.md
+    reason: "Single module keeps Build.cs simple and cross-system headers accessible. Extract only when a system has 20+ files and a stable reuse boundary."
+    referenced_by:
+      - docs/architecture/adr-0004-subsystem-module-architecture.md
+    added: "2026-05-19"
+    revised: ""
+
+  - purpose: movement_component_pattern
+    status: active
+    api: "UHostileMovementComponent : UCharacterMovementComponent — CMC subclass with PhysCustom(0)=Dodge, PhysCustom(1)=Cover; UCoverComponent : UActorComponent for cover proximity"
+    not: "UGameplayAbility (GAS) for sprint/dodge/cover; full custom physics bypassing CMC; separate UMovementStateMachineComponent alongside CMC"
+    adr: docs/architecture/adr-0010-movement-architecture.md
+    reason: "CMC subclassing is canonical UE5 pattern — preserves NavMesh agent integration, foot IK floor data, ramp/step handling, and replication base. GAS adds unjustified module overhead for single-player. Separate state machine component creates CMC synchronisation hazards."
+    referenced_by:
+      - docs/architecture/adr-0010-movement-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - purpose: cover_detection_pattern
+    status: active
+    api: "UCoverComponent FTimerHandle at 4Hz + event triggers on IA_Crouch input and direction change — never per-frame SphereOverlap"
+    not: "Per-frame SphereOverlapActors in Tick(); CMC-internal cover detection"
+    adr: docs/architecture/adr-0010-movement-architecture.md
+    reason: "Per-frame overlap queries for cover detection violate polling_state_in_tick forbidden pattern. 4Hz poll + event triggers provide sufficient responsiveness (≤250ms latency) at ~0.1ms amortised cost."
+    referenced_by:
+      - docs/architecture/adr-0010-movement-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - purpose: noise_emission_api
+    status: active
+    api: "UAIPerceptionSystem::MakeNoise(Instigator, Loudness, NoiseInstigator, Location) OR FAINoiseEvent + UAIPerceptionSystem::ReportEvent()"
+    not: "UAIPerceptionSystem::ReportNoise() (does not exist); UAIPerceptionComponent::ReportNoise() (does not exist); manual per-alien noise delivery"
+    adr: docs/architecture/adr-0010-movement-architecture.md
+    reason: "MakeNoise() is the stable static helper (UE4+) that internally constructs FAINoiseEvent and dispatches to all registered UAISenseConfig_Hearing listeners. ReportNoise() does not exist on either class — confirmed by engine specialist review."
+    referenced_by:
+      - docs/architecture/adr-0010-movement-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - purpose: ai_framework
+    status: active
+    api: "Behavior Trees (UBehaviorTreeComponent) + UAIPerceptionComponent + Environment Query System (UEnvQueryManager) — UE5 native AI stack"
+    not: "Custom FSM UActorComponent for alien decision-making; GAS (Gameplay Ability System) for attack execution"
+    adr: docs/architecture/adr-0012-alien-ai-system.md
+    reason: "BT provides visual editor, abort logic, and service scheduling purpose-built for this use case. EQS abstracts spatial queries. Custom FSM reinvents the stack; GAS adds unjustified module overhead for single-player (same rejection as ADR-0004 for movement)."
+    referenced_by:
+      - docs/architecture/adr-0012-alien-ai-system.md
+    added: "2026-05-20"
+    revised: ""
+
+  - purpose: navmesh_runtime_area_painting
+    status: active
+    api: "UNavModifierComponent on pooled actors spawned by UInfectionSpreadSubsystem — painted automatically when Runtime Generation = Dynamic"
+    not: "UNavSystem::ApplyRadiusModifier (class does not exist in UE5); UNavigationSystemV1 method call for area painting; direct NavMesh tile mutation"
+    adr: docs/architecture/adr-0012-alien-ai-system.md
+    reason: "UNavModifierComponent is the UE5-native pattern for runtime NavArea painting. It registers with the navigation octree automatically and handles World Partition dynamic cell loading. UNavSystem does not exist — the correct runtime access class is UNavigationSystemV1, used for path queries only."
+    referenced_by:
+      - docs/architecture/adr-0012-alien-ai-system.md
+      - docs/architecture/adr-0013-infection-spread-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - purpose: combat_system_pattern
+    status: active
+    api: "UCombatComponent : UActorComponent (per-actor weapon/hit/spread/panic/reload on AHostileCharacter) + UCombatSubsystem : UWorldSubsystem (ECombatState machine, active-alien set, disengagement timer, IMC_Combat lifecycle)"
+    not: "UCombatComponent-only with no coordinator subsystem; pure UWorldSubsystem owning weapon state; GAS-based combat abilities"
+    adr: docs/architecture/adr-0014-combat-system-architecture.md
+    reason: "UCombatComponent is per-actor per ADR-0004 stance. ECombatState must survive actor destruction and reset on level transition — UWorldSubsystem is the correct tier. GAS rejected consistently (ADR-0004, ADR-0010, ADR-0014) for single-player overhead."
+    referenced_by:
+      - docs/architecture/adr-0014-combat-system-architecture.md
+    added: "2026-05-21"
+    revised: ""
+
+  - purpose: infection_source_damage_api
+    status: active
+    api: "IInfectionSpreadInterface::DamageInfectionSource(FGuid SourceId, float Amount) → bool — the only valid path for reducing infection source HP"
+    not: "Direct HP field mutation on FInfectionSourceData; calling TakeDamage on the source actor; Combat System managing source HP internally"
+    adr: docs/architecture/adr-0013-infection-spread-architecture.md
+    reason: "Infection sources are not standard health actors — they have no UHealthComponent. UInfectionSpreadSubsystem manages source HP internally and decides when to set bDestroyed. All damage must go through DamageInfectionSource() to ensure consistent source lifecycle management."
+    referenced_by:
+      - docs/architecture/adr-0013-infection-spread-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+# ─── FORBIDDEN PATTERNS ──────────────────────────────────────────────────────
+
+forbidden_patterns:
+  - pattern: autoload_singleton_gsm
+    status: active
+    description: "UHostileWorldGSM must not be held as a static pointer. Access via GetGameInstance()->GetSubsystem<UHostileWorldGSM>()."
+    why: "Static pointers are not GC-safe, invisible to engine tooling, and break in PIE with multiple worlds."
+    adr: docs/architecture/adr-0002-game-state-machine-implementation.md
+    added: "2026-05-15"
+
+  - pattern: static_subsystem_pointer
+    status: active
+    description: "Subsystem instances must never be cached in a static pointer or member variable. Always call GetSubsystem<T>() at the call site."
+    why: "Static pointers are not GC-safe, invisible to engine tooling, and break in PIE multi-world where multiple subsystem instances exist."
+    adr: docs/architecture/adr-0004-subsystem-module-architecture.md
+    added: "2026-05-19"
+
+  - pattern: initialize_peer_caching
+    status: active
+    description: "UGameInstanceSubsystem::Initialize() must not call GetSubsystem<T>() on a peer unless preceded by Collection.InitializeDependency<T>(). Peer initialization order is not guaranteed."
+    why: "Peer Initialize() ordering within a tier is undefined. Caching a peer in Initialize() returns a valid pointer to an uninitialized subsystem, producing silent undefined behaviour."
+    adr: docs/architecture/adr-0004-subsystem-module-architecture.md
+    added: "2026-05-19"
+
+  - pattern: hud_direct_get_local_player
+    status: active
+    description: "AHUD must not call GetLocalPlayer() directly — that method does not exist on AHUD. Use GetOwningPlayerController()->GetLocalPlayer()->GetSubsystem<T>()."
+    why: "AHUD exposes GetOwningPlayerController(), not GetLocalPlayer(). Calling a nonexistent method fails to compile and indicates a misunderstanding of the UMG/HUD object hierarchy."
+    adr: docs/architecture/adr-0004-subsystem-module-architecture.md
+    added: "2026-05-19"
+
+  - pattern: direct_stamina_write
+    status: active
+    description: "UHostileMovementComponent must never write AHostileCharacter's stamina float directly. All stamina writes go through AHostileCharacter::ConsumeStamina(float) and AHostileCharacter::RegenStamina(float DeltaTime). CMC queries via CanSprint/CanDodge/CanJump (read-only)."
+    why: "Direct stamina writes from CMC couple the physics component to character state, break testability, and violate direct_cross_system_state_write (ADR-0001). Stamina authority belongs to AHostileCharacter."
+    adr: docs/architecture/adr-0010-movement-architecture.md
+    added: "2026-05-20"
+
+  - pattern: mid_tick_cover_exit
+    status: active
+    description: "UCoverComponent must not call SetMovementMode() to exit cover mid-tick. Cover exit must be deferred to UpdateCharacterStateAfterMovement() to prevent one-frame state flicker."
+    why: "Calling SetMovementMode() during PhysCustom() execution changes the mode while CMC is still processing the current frame's physics. This produces a one-frame inconsistency between the movement state enum and the actual physics mode, causing visible character position jitter."
+    adr: docs/architecture/adr-0010-movement-architecture.md
+    added: "2026-05-20"
+
+  - pattern: perception_without_setperception
+    status: active
+    description: "When UAIPerceptionComponent lives on AAlienCharacter (not on AAlienAIController), the controller MUST call SetPerceptionComponent(*PerceptionComp) in OnPossess(). Omitting this makes GetPerceptionComponent() on the controller return null."
+    why: "The UE5 AI system uses the controller's perception component pointer for threat map bookkeeping and dominant-sense resolution. If the component is on the Character but not registered with the controller, any BT service or task that navigates through AAIController::GetPerceptionComponent() will dereference null and crash."
+    adr: docs/architecture/adr-0012-alien-ai-system.md
+    added: "2026-05-20"
+
+  - pattern: damage_sense_implicit_fire
+    status: active
+    description: "UAISenseConfig_Damage does NOT fire automatically when ApplyDamage() is called on an alien. The combat damage pipeline MUST explicitly call UAIPerceptionSystem::ReportDamageEvent(World, DamagedActor, Instigator, Location, HitDirection, Amount) after each damage application."
+    why: "UAISense_Damage is a passive listener — it only processes FAIDamageEvent structs delivered via ReportDamageEvent. There is no hook into the engine's TakeDamage pathway. Relying on implicit firing means the alien never perceives being shot."
+    adr: docs/architecture/adr-0012-alien-ai-system.md
+    referenced_by:
+      - docs/architecture/adr-0012-alien-ai-system.md
+      - docs/architecture/adr-0014-combat-system-architecture.md
+    added: "2026-05-20"
+
+  - pattern: direct_infection_subsystem_cast
+    status: active
+    description: "No system may Cast<UInfectionSpreadSubsystem>(GetWorld()->GetSubsystem<UInfectionSpreadSubsystem>()) and call methods directly. All callers must use Cast<IInfectionSpreadInterface> on the subsystem pointer."
+    why: "Direct type cast couples callers to the concrete implementation class, breaking testability and the interface contract established by ADR-0013. IInfectionSpreadInterface is the stable API surface — the concrete class is an implementation detail."
+    adr: docs/architecture/adr-0013-infection-spread-architecture.md
+    added: "2026-05-20"

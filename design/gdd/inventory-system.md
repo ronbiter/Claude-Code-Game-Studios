@@ -10,6 +10,15 @@
 
 The Inventory System manages all items the player carries — weapons, ammo, healing supplies, cure devices, and misc resources. It uses a hybrid capacity model: a 5×4 slot grid (20 base slots, expandable to 30) for organization, plus a weight-based carry limit (50kg base, expandable to 70kg) for survival tension. Two dedicated weapon slots (primary + secondary) exist outside the grid but weapon weight counts toward the carry limit. The player accesses inventory through a grid-based UI (GSM Inventory state, priority 35) with movement dampened to 20% and the world slowed to 0.85x. Items have weight, stack rules, and category-based organization. Every slot and every kilogram matters — the inventory is the resource backbone of Pillar 3 (Tense Survival).
 
+**Weapon quick-reference** (cross-system canonical values — registered in entities.yaml):
+
+| Weapon | Weight | Footprint | Slots | Ammo Type | Magazine |
+|--------|--------|-----------|-------|-----------|----------|
+| Pistol | 1.5 kg | 1×2 | 2 | Pistol ammo | 15 rounds |
+| Shotgun | 2.5 kg | 1×3 | 3 | Shotgun shells | 6 shells |
+| Rifle | 3.5 kg | 2×2 | 4 | Rifle ammo | 20 rounds |
+| Melee (knife) | 1.0 kg | 1×1 | 1 | — | — |
+
 > **Quick reference** — Layer: `Feature` · Priority: `MVP` · Key deps: `Player Controller, Health System, Combat System`
 
 ## Overview
@@ -58,7 +67,7 @@ Both limits must be satisfied to carry an item:
 
 | Category | Symbol | Stack Rule | Weight Range | Slot Footprint | Examples |
 |----------|--------|------------|--------------|----------------|----------|
-| **Weapon** | W | No stacking (each weapon is unique) | 1.5–5.0 kg | 1×2 to 2×3 | Pistol, Rifle, Shotgun |
+| **Weapon** | W | No stacking (each weapon is unique) | 1.0–3.5 kg | 1×1 to 2×2 | Pistol (1×2), Rifle (2×2), Shotgun (1×3), Melee (1×1) |
 | **Ammo** | A | Stacks up to 99 per stack | 0.05–0.15 per unit | 1×1 per stack | Pistol ammo, Rifle ammo, Shotgun shells |
 | **Healing** | H | Stacks up to 5 per stack | 0.3–0.8 per unit | 1×1 per stack | Field Dressing, Medkit, Stimshot |
 | **Cure** | C | No stacking (each device is single-use) | 1.0 kg | 1×2 | Cure Device |

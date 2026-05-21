@@ -9,12 +9,12 @@
 
 The Game State Machine (GSM) is the central orchestrator of the game's operational modes. It defines what state the game is in at any moment — Title Screen, Loading, Playing, Paused, Cutscene, Dialogue, Inventory, Game Over — and manages all transitions between them. The GSM is pure infrastructure: a state machine backed by a priority stack, with no direct player interaction but profound player-facing consequences. Every other system — Input, Camera, HUD, Save/Load, Combat — reads the GSM state to know how to behave. When the player presses ESC, the GSM pushes Paused onto the stack and the world freezes. When a cutscene starts, the GSM transitions to Cutscene and Input, HUD, and Camera all respond accordingly.
 
-There is no existing ADR for the Game State Machine — this GDD establishes the design; the accompanying ADR will document the implementation pattern (likely GameMode/GameState hierarchy with optional State Stack for overlapping states).
+ADR-0002 documents the implementation pattern: `UHostileWorldGSM` is implemented as a `UGameInstanceSubsystem` (single instance per game session) that also implements `FTickableGameObject` for queue drain. This ownership survives level transitions, which a GameMode-owned component would not.
 
 **Key design decisions:**
 1. **Priority Stack**: Multiple states can coexist (e.g., Paused during Dialogue). A stack with priority levels resolves conflicts.
 2. **State-driven system responses**: Each system subscribes to GSM state changes and adjusts behavior accordingly.
-3. **Single authoritative source**: One GameMode component owns the GSM; all state queries go through it.
+3. **Single authoritative source**: The GSM is a `UGameInstanceSubsystem` (per ADR-0002); one instance per game session, accessed via `GetGameInstance()->GetSubsystem<UHostileWorldGSM>()`. All state queries go through it.
 4. **Event-driven transitions**: States don't poll — they react to discrete events (input, trigger, timer, system signal).
 
 ## Player Fantasy
@@ -30,7 +30,7 @@ This fantasy directly serves **Pillar 1: Hostile World** — the world is alive 
 ### Core Rules
 
 **Rule 1 — Single Authoritative Source**
-The GSM exists as a single component (`UHostileWorldGameStateMachine`) owned by the GameMode. No other system maintains parallel state. All state authority flows from this one component.
+The GSM is implemented as `UHostileWorldGSM : public UGameInstanceSubsystem` (per ADR-0002). One instance per `UGameInstance`, surviving all level transitions — the `Loading` state spans level loads, which a GameMode-owned component cannot do because `AGameMode` is destroyed and recreated between maps. No other system maintains parallel state. All state authority flows from this single subsystem, accessed via `GetGameInstance()->GetSubsystem<UHostileWorldGSM>()`.
 
 **Rule 2 — Event-Driven Transitions Only**
 State changes occur in response to discrete events, never via polling. Events are queued and processed in order of receipt. No system may force a state change — it may only *request* one.
@@ -49,13 +49,15 @@ The GSM maintains a LIFO stack. When a new state enters, it pushes. When a state
 - **Interruptible** (can be paused/inventory'd): Playing, Dialogue, Inventory, Paused
 
 **Rule 6b — Combat Interruption of Interruptible States**
-When combat engagement is detected (enemy enters engagement range) while an Interruptible state is active (Inventory, Dialogue, Paused):
+The trigger is the Combat System's `OnCombatEngaged()` event — i.e. player Combat Mode entry per Combat System Rule 5 (detection=100, player attacks an alien, or a patrol forces combat). GSM does **not** compute its own "engagement range"; it reacts to Combat's authoritative event. When `OnCombatEngaged()` fires while **Inventory** or **Paused** is active:
 1. The Interruptible state is immediately popped from the stack
 2. GSM transitions to Playing (0.1s fast transition, no animation)
-3. IMC_Combat is pushed to the input stack
+3. IMC_Combat is pushed by Combat System (sole owner — GSM does not push it; see combat-system.md "IMC_Combat ownership")
 4. Any UI associated with the interrupted state is closed immediately
 5. World timescale (0.85x slow) is reset to 1.0x by the GSM transition
 This bypasses the normal priority stack validation because combat engagement is a safety-critical override, not a normal state push.
+
+**Dialogue is exempt from Rule 6b.** Dialogue (priority 30) is interrupted only when an alien reaches melee range, governed by Dialogue System Rule 7 — not by combat engagement at distance. This prevents a patrol at 1500cm from silently cancelling a conversation while the player is not yet in danger, and reconciles the prior engagement-range-vs-melee-range contradiction across GSM / Player Controller / Dialogue.
 
 **Rule 7 — Subscription/Notification Model**
 All systems subscribe via `SubscribeToStateChange(FStateChangeDelegate)`. Callbacks: `OnStateEntered`, `OnStateExited`, `OnTransitionStarted`. Subscribers must NOT trigger another state change during callback (reentrancy guard enforced).
@@ -70,7 +72,7 @@ Fast transitions (Playing → Paused) = short exhale (~0.2s). Slow transitions (
 | Title | 0 | Yes | Main menu / attract mode |
 | Loading | 1 | Yes | Async asset loading with heartbeat pulse |
 | Playing | 10 | No | Player control active — base state |
-| Paused | 20 | Yes (input) | Player frozen, world holds still |
+| Paused | 20 | Yes (input) | Player frozen, world holds still. Map System opens as a UI overlay within this state (no separate Map state). `IA_Map` hold toggles the map UI over the tactical HUD; IMC_Menu remains active throughout. |
 | Cutscene | 25 | Yes | Non-interactive cinematic sequence |
 | Dialogue | 30 | Yes (movement) | Conversation active, movement locked |
 | Inventory | 35 | Yes (movement) | Equipment management, movement locked |
@@ -217,6 +219,10 @@ The Game State Machine has no upstream dependencies — it is a foundation layer
 | Combat System | `OnStateEntered(FGameplayTag)` | Disable combat in Dialogue/Cutscene/Paused |
 | Health System | `RequestStateTransition(PlayerDied)` | Call to trigger GameOver |
 | Dialogue System | `RequestStateTransition(DialogueStart/End)` | Request Dialogue state; receive return to previous |
+| Tutorial System | `SubscribeToStateChange(FStateChangeDelegate)` | Mutes hint display in non-Playing states; resumes on Playing entry |
+| Map System | `RequestStateTransition(Paused/Playing)` | Opens Paused for map overlay; restores Playing on close |
+| Tutorial System | `SubscribeToStateChange(FStateChangeDelegate)` | Mutes hint display in non-Playing states; resumes hint eligibility on Playing entry |
+| Map System | `RequestStateTransition(Paused/Playing)` | Triggers Paused on map open; requests Playing on map close |
 
 **Interface Contract:**
 

@@ -1,0 +1,80 @@
+# Entity Registry — Index
+#
+# PURPOSE: Entry point for the split entity registry. Load this file first,
+# then load specific domain files on demand.
+#
+# LOAD-ON-DEMAND RULES:
+#   Default: load this file only.
+#   Load a domain file when actively working on systems in its domain.
+#   Cross-domain audits (/consistency-check full, /review-all-gdds) load ALL domain files.
+#   /design-system: find domain file(s) whose systems[] includes the current system,
+#     then load only those. If no match, load all.
+#   economy-designer / systems-designer: load domain file(s) for the system being designed.
+#
+# WRITTEN BY: /design-system (Phase 5b — after GDD sections are approved)
+#             /consistency-check (Phase 6 — when resolving conflicts)
+# READ BY:    /design-system (Phase 2a — load relevant domain file(s) before authoring)
+#             /consistency-check (Phase 1 — load domain files per scope)
+#             /review-all-gdds (Phase 1b — load all domain files for cross-domain review)
+#             economy-designer, systems-designer (registry awareness)
+#
+# SEARCH PATTERNS:
+#   All domain files:        Grep pattern="^  - file:" path="design/registry/entities-index.yaml"
+#   Which domain owns X:     Grep pattern="[system-name]" path="design/registry/entities-index.yaml"
+
+version: 1
+last_updated: "2026-05-21"
+
+domains:
+  - file: design/registry/entities-world.yaml
+    description: "Factions (Remnant, Tethered, Hollowed, Watch) + scene/zone/streaming constants"
+    systems:
+      - scene-management
+      - faction-reputation-system
+
+  - file: design/registry/entities-items.yaml
+    description: "Weapon items + inventory formulas (can_carry, stack_merge, weight_after_use) + inventory constants"
+    systems:
+      - inventory-system
+      - combat-system
+
+  - file: design/registry/entities-movement.yaml
+    description: "Movement formulas (effective_move_speed, stamina, noise, dodge) + movement constants"
+    systems:
+      - movement-system
+
+  - file: design/registry/entities-health.yaml
+    description: "Health formulas (healing, env_damage, injury penalties) + health constants"
+    systems:
+      - health-system
+      - movement-system
+
+  - file: design/registry/entities-infection.yaml
+    description: "Infection spread formulas (cell_pressure, infection_tick, cure, hive, zone_aggregate) + infection constants"
+    systems:
+      - infection-spread-system
+      - alien-ai-system
+
+  - file: design/registry/entities-investigation.yaml
+    description: "Investigation formulas (thread_progress, clue_accessibility) + investigation/stealth constants"
+    systems:
+      - investigation-system
+      - stealth-system
+      - player-controller
+
+  - file: design/registry/entities-faction.yaml
+    description: "Faction reputation formulas (reputation_delta, standing_tier, ripple, trade_price)"
+    systems:
+      - faction-reputation-system
+      - quest-system
+      - inventory-system
+
+  - file: design/registry/entities-combat.yaml
+    description: "Combat formula (disengagement_timer) + combat/detection state constants"
+    systems:
+      - combat-system
+      - stealth-system
+      - alien-ai-system
+      - game-state-machine
+      - investigation-system
+      - quest-system

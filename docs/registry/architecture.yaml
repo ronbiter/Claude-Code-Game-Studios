@@ -1,3 +1,8 @@
+# DEPRECATED — This file has been split into domain registries.
+# Use docs/registry/adr-index.yaml as the entry point.
+# Domain files: adr-communication.yaml, adr-subsystems.yaml, adr-data.yaml, adr-input.yaml, adr-rendering.yaml
+# This file is kept for reference only and will not be updated.
+
 # Architecture Decision Registry
 #
 # PURPOSE: Single source of truth for key architectural stances that all ADRs
@@ -30,7 +35,7 @@
 #   Superseded entries:     Grep pattern="status: superseded"
 
 version: 1
-last_updated: ""
+last_updated: "2026-05-20"
 
 # ─── STATE OWNERSHIP ─────────────────────────────────────────────────────────
 # Who is the authoritative owner of each piece of shared game state.
@@ -43,7 +48,116 @@ last_updated: ""
 # interface: how other systems access this state (read-only property, method call,
 #   signal, shared resource, etc.) — this is the contract other ADRs depend on.
 
-state_ownership: []
+state_ownership:
+  - state: game_state_machine_stack
+    status: active
+    owner_system: UHostileWorldGSM
+    adr: docs/architecture/adr-0002-game-state-machine-implementation.md
+    interface: "GetCurrentState() → FGameplayTag (read-only); IsStateActive(FGameplayTag) → bool; RequestStateTransition(FFSMEvent) — only valid write path"
+    write_access: UHostileWorldGSM-only
+    referenced_by:
+      - docs/architecture/adr-0002-game-state-machine-implementation.md
+    added: "2026-05-15"
+    revised: ""
+
+  - state: active_input_mapping_contexts
+    status: active
+    owner_system: AHostileWorldPlayerController
+    adr: docs/architecture/adr-0003-enhanced-input-architecture.md
+    interface: "PushIMC(UInputMappingContext*, int32 Priority); PopIMC(UInputMappingContext*) — all callers must go through PC"
+    write_access: AHostileWorldPlayerController-only (Movement/Combat call PushIMC/PopIMC via PC public interface)
+    referenced_by:
+      - docs/architecture/adr-0003-enhanced-input-architecture.md
+    added: "2026-05-19"
+    revised: ""
+
+  - state: save_data
+    status: active
+    owner_system: USaveLoadSubsystem
+    adr: docs/architecture/adr-0006-save-load-serialization.md
+    interface: "TriggerAutosave() — only valid save path; LoadSaveOnStartup() called from UGameInstance::OnStart(); RegisterProvider(IHostileSaveProvider*) for subsystem opt-in"
+    write_access: USaveLoadSubsystem-only (no subsystem may call AsyncSaveGameToSlot directly)
+    referenced_by:
+      - docs/architecture/adr-0006-save-load-serialization.md
+    added: "2026-05-20"
+    revised: ""
+
+  - state: physics_surface_state
+    status: active
+    owner_system: UPhysicsHelperSubsystem
+    adr: docs/architecture/adr-0007-physics-collision-architecture.md
+    interface: "GetSurfaceType(FVector Location) → EHostileSurfaceType (read-only query); CalculateFallDamage(float) → float (pure formula); OnPlayerLanded / OnImpact delegates (subscribe via AddDynamic in BeginPlay)"
+    write_access: UPhysicsHelperSubsystem-only (AHostileCharacter calls NotifyPlayerLanded/NotifyImpact; no other actor may fire these delegates)
+    referenced_by:
+      - docs/architecture/adr-0007-physics-collision-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - state: scene_streaming_state
+    status: active
+    owner_system: USceneManagementSubsystem
+    adr: docs/architecture/adr-0008-scene-streaming-architecture.md
+    interface: "GetCurrentZone() → FName (read-only); GetZoneState(FName) → FZoneState (read-only); RequestDataLayerSwap(FName ZoneId, FName TargetLayer) — only valid Data Layer write path; GetStreamingState() → FStreamingState (read-only)"
+    write_access: USceneManagementSubsystem-only (UInfectionSpreadSubsystem and others call RequestDataLayerSwap via ISceneManagementSubsystem interface; no system may call UDataLayerSubsystem directly)
+    referenced_by:
+      - docs/architecture/adr-0008-scene-streaming-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - state: camera_mode_state
+    status: active
+    owner_system: AHostileWorldPlayerCameraManager
+    adr: docs/architecture/adr-0009-camera-architecture.md
+    interface: "GetCameraMode() → EHostileCameraMode (read-only); SetCameraMode(Mode, BlendTime) — only valid mode-write path (called by AHostileWorldPlayerController only); AddShake(Class, Scale); AddRecoil(Pitch, Yaw)"
+    write_access: AHostileWorldPlayerController-only (calls SetCameraMode via ICameraSystem interface; no other actor may set camera mode directly)
+    referenced_by:
+      - docs/architecture/adr-0009-camera-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - state: movement_state
+    status: active
+    owner_system: UHostileMovementComponent
+    adr: docs/architecture/adr-0010-movement-architecture.md
+    interface: "GetCurrentMovementState() → EHostileMovementState (read-only); OnMovementStateChanged delegate (subscribe via AddDynamic in BeginPlay)"
+    write_access: UHostileMovementComponent-only (state resolved internally from CMC physics mode and input events; no external system may set movement state directly)
+    referenced_by:
+      - docs/architecture/adr-0010-movement-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - state: character_stamina
+    status: active
+    owner_system: AHostileCharacter
+    adr: docs/architecture/adr-0010-movement-architecture.md
+    interface: "CanSprint() → bool; CanDodge(float Cost) → bool; CanJump() → bool (read-only queries for CMC); ConsumeStamina(float) and RegenStamina(float DeltaTime) — only valid write paths, called by CMC"
+    write_access: AHostileCharacter-only via ConsumeStamina/RegenStamina (CMC calls these methods; no other system may write stamina directly)
+    referenced_by:
+      - docs/architecture/adr-0010-movement-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - state: alien_squad_state
+    status: active
+    owner_system: UAlienSquadSubsystem
+    adr: docs/architecture/adr-0012-alien-ai-system.md
+    interface: "RegisterAlien(AAlienAIController*); UnregisterAlien(AAlienAIController*); GetSquadById(int32) → TArray<TWeakObjectPtr<AAlienAIController>>; GetAllActiveAliens() → TArray<TWeakObjectPtr<AAlienAIController>>; NotifyPlayerPosition(FVector); BroadcastSquadAlert(Source, Location, Score)"
+    write_access: UAlienSquadSubsystem-only (AAlienAIController calls RegisterAlien/UnregisterAlien and BroadcastSquadAlert via subsystem; no direct TArray mutation from outside)
+    referenced_by:
+      - docs/architecture/adr-0012-alien-ai-system.md
+    added: "2026-05-20"
+    revised: ""
+
+  - state: infection_spread_state
+    status: active
+    owner_system: UInfectionSpreadSubsystem
+    adr: docs/architecture/adr-0013-infection-spread-architecture.md
+    interface: "IInfectionSpreadInterface — GetCellInfectionLevel(FIntPoint) → float; GetCellState(FIntPoint) → ECellInfectionState; GetNearbyCellInfectionLevels(FVector, float) → TArray; GetZoneInfectionLevel(FName) → float; GetActiveSourceCount(FName) → int32; GetSourcesInRadius(FVector, float) → TArray; DamageInfectionSource(FGuid, float) → bool; DeployCure(FVector) → bool. All callers use IInfectionSpreadInterface — no direct cast to UInfectionSpreadSubsystem."
+    write_access: UInfectionSpreadSubsystem-only (FTimerHandle-driven ticks update CellData; DamageInfectionSource() and DeployCure() are the only external write paths)
+    referenced_by:
+      - docs/architecture/adr-0013-infection-spread-architecture.md
+    added: "2026-05-20"
+    revised: ""
 
 # Example:
 #
@@ -71,7 +185,260 @@ state_ownership: []
 #
 # pattern options: signal | direct_call | event_bus | shared_resource | rpc | none
 
-interfaces: []
+interfaces:
+  - contract: inter_system_events
+    status: active
+    pattern: dynamic_multicast_delegate
+    description: "Owner→subscriber events. Producer declares DECLARE_DYNAMIC_MULTICAST_DELEGATE; consumers AddDynamic() in BeginPlay(), RemoveDynamic() in EndPlay()."
+    adr: docs/architecture/adr-0001-cross-system-communication.md
+    referenced_by:
+      - docs/architecture/adr-0001-cross-system-communication.md
+    added: "2026-05-15"
+    revised: ""
+
+  - contract: global_broadcast_events
+    status: active
+    pattern: gameplay_message_router
+    description: "Global 1-to-many events where consumers are unknown at authoring time. Broadcast via UGameplayMessageSubsystem::BroadcastMessage<T>(); listen via RegisterListener<T>(). Handle must be member field, not local variable."
+    producer: any system
+    consumers: []
+    adr: docs/architecture/adr-0001-cross-system-communication.md
+    module_required: "GameplayMessageRuntime (Build.cs) + GameplayMessageRouter plugin (.uproject)"
+    referenced_by:
+      - docs/architecture/adr-0001-cross-system-communication.md
+    added: "2026-05-15"
+    revised: ""
+
+  - contract: input_action_routing
+    status: active
+    pattern: dynamic_multicast_delegate
+    description: "PC Route_* callbacks (SetupInputComponent bindings) fire ADR-0001 Tier 1 multicast delegates. Subsystems subscribe via AddDynamic(). PC never calls subsystem methods directly."
+    producer: AHostileWorldPlayerController (Route_* callbacks)
+    consumers:
+      - Movement System (Route_Move, Route_Sprint, Route_Crouch, Route_Jump, Route_Dodge, Route_Lean*)
+      - Combat System (Route_Attack, Route_Aim, Route_Reload, Route_Melee)
+      - Inventory System (Route_Inventory, Route_QuickSlot*)
+      - HUD System (Route_Map, Route_Pause)
+      - Dialogue System (via Interact routing)
+      - Investigation System (via Interact routing)
+    adr: docs/architecture/adr-0003-enhanced-input-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0003-enhanced-input-architecture.md
+    added: "2026-05-19"
+    revised: ""
+
+  - contract: save_provider_registration
+    status: active
+    pattern: uinterface
+    description: "Subsystems that contribute save data implement IHostileSaveProvider (PopulateSaveData / LoadFromSaveData) and call USaveLoadSubsystem::RegisterProvider(this) in their Initialize() after Collection.InitializeDependency<USaveLoadSubsystem>()."
+    producer: USaveLoadSubsystem (calls all registered providers on save/load)
+    consumers:
+      - UTutorialSubsystem (FTutorialSaveData)
+      - UQuestSubsystem (FQuestSaveData)
+      - UFactionSubsystem (FFactionSaveData)
+      - UInventorySubsystem (FInventorySaveData)
+      - UInfectionSubsystem (FInfectionSaveData)
+    adr: docs/architecture/adr-0006-save-load-serialization.md
+    referenced_by:
+      - docs/architecture/adr-0006-save-load-serialization.md
+    added: "2026-05-20"
+    revised: ""
+
+  - contract: checkpoint_save_trigger
+    status: active
+    pattern: gameplay_message_router
+    description: "ACheckpointActor broadcasts FCheckpointReachedMessage on TAG_Event_Checkpoint_Reached. USaveLoadSubsystem listens and calls TriggerAutosave(). No direct coupling between checkpoint actors and the save subsystem."
+    producer: ACheckpointActor
+    consumers:
+      - USaveLoadSubsystem
+    adr: docs/architecture/adr-0006-save-load-serialization.md
+    referenced_by:
+      - docs/architecture/adr-0006-save-load-serialization.md
+    added: "2026-05-20"
+    revised: ""
+
+  - contract: physics_landed_event
+    status: active
+    pattern: dynamic_multicast_delegate
+    description: "AHostileCharacter::Landed() override calls UPhysicsHelperSubsystem::NotifyPlayerLanded(). Consumers subscribe to UPhysicsHelperSubsystem::OnPlayerLanded via AddDynamic() in BeginPlay(); RemoveDynamic() in EndPlay()."
+    producer: AHostileCharacter (via Landed() override)
+    consumers:
+      - UHealthComponent (fall damage calculation)
+      - UCameraShakeManager (landing shake)
+    adr: docs/architecture/adr-0007-physics-collision-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0007-physics-collision-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - contract: physics_impact_event
+    status: active
+    pattern: dynamic_multicast_delegate
+    description: "AHostileCharacter::OnComponentHit binding calls UPhysicsHelperSubsystem::NotifyImpact(). Consumers subscribe to UPhysicsHelperSubsystem::OnImpact via AddDynamic() in BeginPlay(); RemoveDynamic() in EndPlay()."
+    producer: AHostileCharacter (via OnComponentHit)
+    consumers:
+      - UCameraShakeManager (impact shake)
+    adr: docs/architecture/adr-0007-physics-collision-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0007-physics-collision-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - contract: zone_crossed_event
+    status: active
+    pattern: dynamic_multicast_delegate
+    description: "USceneManagementSubsystem broadcasts OnZoneCrossed(FName FromZone, FName ToZone) when player crosses a zone boundary (3.0s debounce). Consumers AddDynamic() in BeginPlay(); RemoveDynamic() in EndPlay()."
+    producer: USceneManagementSubsystem (via AZoneBoundaryVolume overlap + 3.0s FTimerHandle debounce)
+    consumers:
+      - Camera System (environmental camera effects on zone change)
+      - HUD System (zone name display update)
+      - Alien AI System (zone state update for behavior selection)
+    adr: docs/architecture/adr-0008-scene-streaming-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0008-scene-streaming-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - contract: camera_mode_changed_event
+    status: active
+    pattern: dynamic_multicast_delegate
+    description: "AHostileWorldPlayerCameraManager broadcasts OnCameraModeChanged(EHostileCameraMode OldMode, EHostileCameraMode NewMode) on every mode transition. Consumers bind via OnCameraModeChanged.AddDynamic() in BeginPlay(); RemoveDynamic() in EndPlay()."
+    producer: AHostileWorldPlayerCameraManager (fired in SetCameraMode() after mode enum update)
+    consumers:
+      - HUD System (mode-based widget visibility)
+      - Stealth System (FOV reads camera mode)
+      - Combat System (65° FOV on engage; recoil routing)
+    adr: docs/architecture/adr-0009-camera-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0009-camera-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - contract: movement_state_changed_event
+    status: active
+    pattern: dynamic_multicast_delegate
+    description: "UHostileMovementComponent broadcasts OnMovementStateChanged(EHostileMovementState NewState) on every state transition. Consumers bind via AddDynamic() in BeginPlay(); RemoveDynamic() in EndPlay()."
+    producer: UHostileMovementComponent (fired on every EHostileMovementState transition)
+    consumers:
+      - Stealth System (maps state to noise level and visibility modifier)
+      - Camera System (adjusts arm length, FOV per state)
+      - Alien AI System (player velocity and state for pursuit calculations)
+      - HUD System (tactical HUD state display)
+    adr: docs/architecture/adr-0010-movement-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0010-movement-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - contract: dodge_event
+    status: active
+    pattern: dynamic_multicast_delegate
+    description: "UHostileMovementComponent fires OnDodgeStarted(float IFrameDuration) at dodge activation (0.10s wind-up complete) and OnDodgeEnded() at dodge complete (0.65s). IFrameDuration = 0.25s — Health System uses this to gate invulnerability window."
+    producer: UHostileMovementComponent (PhysDodge() phase transitions)
+    consumers:
+      - Health System (i-frame invulnerability window: immune to damage for IFrameDuration after OnDodgeStarted)
+      - Combat System (dodge window awareness for enemy attack timing)
+      - Camera System (dodge motion blur trigger)
+    adr: docs/architecture/adr-0010-movement-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0010-movement-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - contract: noise_emitted_event
+    status: active
+    pattern: dynamic_multicast_delegate
+    description: "UHostileMovementComponent fires OnNoiseEmitted(float RadiusMeters) and calls UAIPerceptionSystem::MakeNoise() simultaneously. RadiusMeters = clamp((N_base × M_surface + N_exhaust) × 1.5, 0, 200). AI hearing percept handled natively by engine; OnNoiseEmitted is for non-AI consumers only."
+    producer: UHostileMovementComponent (computed each tick when noise > 0)
+    consumers:
+      - Alien AI System (via UAIPerceptionSystem::MakeNoise — engine-native hearing percept)
+      - Stealth System (noise radius for detection range calculation)
+    adr: docs/architecture/adr-0010-movement-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0010-movement-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - contract: movement_to_anim_state_push
+    status: active
+    pattern: dynamic_multicast_delegate
+    description: "UHostileMovementComponent pushes EHostileMovementState to UHostileWorldAnimInstance via OnMovementStateChanged(EHostileMovementState NewState) delegate. ABP subscribes in NativeBeginPlay(); unsubscribes in NativeUninitializeAnimation(). CachedMovementState in ABP is written exclusively by this callback — never read from CMC inside NativeUpdateAnimation."
+    producer: UHostileMovementComponent (fired on every EHostileMovementState transition)
+    consumers:
+      - UHostileWorldAnimInstance (updates CachedMovementState, triggers montages, switches Linked Layers)
+    adr: docs/architecture/adr-0011-animation-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0011-animation-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - contract: combat_montage_request
+    status: active
+    pattern: direct_call
+    description: "External systems (Combat System) request montage playback via AHostileCharacter proxy methods: PlayFireMontage(EHostileWeaponType), PlayReloadMontage(EHostileWeaponType), PlayMeleeMontage(). These proxy into UHostileWorldAnimInstance. No system may call GetMesh()->GetAnimInstance()->Montage_Play() directly."
+    producer: Combat System / UCombatComponent (calls AHostileCharacter proxy methods)
+    consumers:
+      - UHostileWorldAnimInstance (calls Montage_Play on UpperBodySlot)
+    adr: docs/architecture/adr-0011-animation-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0011-animation-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - contract: alien_death_event
+    status: active
+    pattern: dynamic_multicast_delegate
+    description: "AAlienCharacter fires OnAlienKilled(AAlienCharacter* AlienActor) when HP reaches 0. Consumers bind via AddDynamic() in BeginPlay(); RemoveDynamic() in EndPlay(). UAlienSquadSubsystem also binds this to call UnregisterAlien()."
+    producer: AAlienCharacter (fired when HP = 0)
+    consumers:
+      - Combat System (scoring, loot, kill tracking)
+      - UAlienSquadSubsystem (UnregisterAlien call)
+    adr: docs/architecture/adr-0012-alien-ai-system.md
+    referenced_by:
+      - docs/architecture/adr-0012-alien-ai-system.md
+    added: "2026-05-20"
+    revised: ""
+
+  - contract: squad_alert_broadcast
+    status: active
+    pattern: direct_call
+    description: "AAlienAIController calls UAlienSquadSubsystem::BroadcastSquadAlert(Source, TargetLocation, AlertScore) when detection threshold is crossed. Subsystem applies 1.5s delay, 3000cm distance filter, 1s debounce, and M_state multiplier before notifying receiving aliens via their BT Blackboard."
+    producer: AAlienAIController (calls subsystem on detection threshold crossing)
+    consumers:
+      - UAlienSquadSubsystem (owns broadcast authority, filters, and delivery)
+    adr: docs/architecture/adr-0012-alien-ai-system.md
+    referenced_by:
+      - docs/architecture/adr-0012-alien-ai-system.md
+    added: "2026-05-20"
+    revised: ""
+
+  - contract: cell_state_changed_event
+    status: active
+    pattern: dynamic_multicast_delegate
+    description: "UInfectionSpreadSubsystem exposes FCellStateChangedDelegate OnCellStateChanged as a public UPROPERTY. Consumers call OnCellStateChanged.AddUObject(this, &...) in BeginPlay/Initialize(); RemoveDynamic/Remove() in EndPlay/Deinitialize(). Payload: FCellStateChangedPayload (CellCoords, OldState, NewState, InfectionLevel)."
+    producer: UInfectionSpreadSubsystem (fired on every ECellInfectionState transition)
+    consumers:
+      - AHostileWorldPlayerController (camp threatened, route blocked events)
+      - UHUDSubsystem (tactical HUD infection heatmap update)
+    adr: docs/architecture/adr-0013-infection-spread-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0013-infection-spread-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - contract: hive_spawned_broadcast
+    status: active
+    pattern: gameplay_message_router
+    description: "UInfectionSpreadSubsystem broadcasts FHiveSpawnedMessage on TAG_Event_Hive_Spawned when a procedural hive completes spawning. Zone-wide (15,000 cm audio attenuation). Consumers use UGameplayMessageSubsystem::RegisterListener<FHiveSpawnedMessage>(TAG_Event_Hive_Spawned, ...)."
+    producer: UInfectionSpreadSubsystem (EvaluateHiveSpawns() on successful spawn)
+    consumers:
+      - Audio System (hive emergence SFX + controller rumble)
+      - Quest System (hive-related objective tracking)
+    adr: docs/architecture/adr-0013-infection-spread-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0013-infection-spread-architecture.md
+    added: "2026-05-20"
+    revised: ""
 
 # Example:
 #
@@ -100,7 +467,20 @@ interfaces: []
 # Register a budget when an ADR explicitly claims a frame time allocation.
 # The registry lets /architecture-review verify the total doesn't exceed the target.
 
-performance_budgets: []
+performance_budgets:
+  - system: alien_ai
+    status: active
+    budget_ms_per_alien: 0.5
+    budget_ms_total: 4.0
+    alien_count: 8
+    target_fps: 60
+    platform: PC
+    breakdown: "BT tick <0.15ms; AI Perception <0.05ms; EQS query (when active) <0.10ms; Navigation <0.10ms; other <0.10ms"
+    adr: docs/architecture/adr-0012-alien-ai-system.md
+    referenced_by:
+      - docs/architecture/adr-0012-alien-ai-system.md
+    added: "2026-05-20"
+    revised: ""
 
 # Example:
 #
@@ -131,7 +511,317 @@ performance_budgets: []
 # Register an API decision when the choice is non-obvious and other ADRs might
 # make a different choice for the same purpose without knowing this was decided.
 
-api_decisions: []
+api_decisions:
+  - purpose: inter_system_communication_owner_subscriber
+    status: active
+    api: DECLARE_DYNAMIC_MULTICAST_DELEGATE + AddDynamic/RemoveDynamic
+    not: "Direct function calls, raw function pointers, Blueprint Event Dispatchers (for C++ core systems)"
+    adr: docs/architecture/adr-0001-cross-system-communication.md
+    reason: "Type-safe, Blueprint-accessible, UE reflection-compatible. Established pattern for owner→subscriber events."
+    referenced_by:
+      - docs/architecture/adr-0001-cross-system-communication.md
+    added: "2026-05-15"
+    revised: ""
+
+  - purpose: game_state_machine_ownership
+    status: active
+    api: "UGameInstanceSubsystem (UHostileWorldGSM) + FTickableGameObject"
+    not: "AGameMode-owned component, UWorldSubsystem, static singleton pointer"
+    adr: docs/architecture/adr-0002-game-state-machine-implementation.md
+    reason: "Survives level transitions (Loading state spans them). AGameMode is destroyed between loads. UGameInstanceSubsystem lives for the full game session."
+    referenced_by:
+      - docs/architecture/adr-0002-game-state-machine-implementation.md
+    added: "2026-05-15"
+    revised: ""
+
+  - purpose: global_broadcast_communication
+    status: active
+    api: UGameplayMessageSubsystem (GameplayMessageRuntime module)
+    not: "Custom event bus singleton, stringly-typed message maps"
+    adr: docs/architecture/adr-0001-cross-system-communication.md
+    reason: "Engine-provided, tag-based, type-safe broadcast system. Use instead of custom infrastructure."
+    referenced_by:
+      - docs/architecture/adr-0001-cross-system-communication.md
+    added: "2026-05-15"
+    revised: ""
+
+  - purpose: input_action_binding_location
+    status: active
+    api: "APlayerController::SetupInputComponent() — all 22 IA_* BindAction calls here"
+    not: "APawn/ACharacter::SetupPlayerInputComponent() for core gameplay actions; split binding across PC and Character"
+    adr: docs/architecture/adr-0003-enhanced-input-architecture.md
+    reason: "PC is the thin router. SetupInputComponent fires once and survives pawn swaps. All routing stays in one class."
+    referenced_by:
+      - docs/architecture/adr-0003-enhanced-input-architecture.md
+    added: "2026-05-19"
+    revised: ""
+
+  - purpose: runtime_input_rebinding
+    status: active
+    api: "UEnhancedInputUserSettings::MapPlayerKey() + SaveSettings() / LoadSettings()"
+    not: "AddPlayerMappedKey() / PlayerMappableInputConfig (pre-5.3 legacy path)"
+    adr: docs/architecture/adr-0003-enhanced-input-architecture.md
+    reason: "UEnhancedInputUserSettings is the UE 5.3+ production API with built-in persistence. Legacy path is superseded."
+    referenced_by:
+      - docs/architecture/adr-0003-enhanced-input-architecture.md
+    added: "2026-05-19"
+    revised: ""
+
+  - purpose: subsystem_session_tier
+    status: active
+    api: "UGameInstanceSubsystem — UQuestSubsystem, UFactionSubsystem, USaveLoadSubsystem, UInventorySubsystem, UHostileWorldGSM"
+    not: "UWorldSubsystem or ULocalPlayerSubsystem for state that must survive level transitions"
+    adr: docs/architecture/adr-0004-subsystem-module-architecture.md
+    reason: "Session-tier systems carry state across level transitions. UGameInstanceSubsystem lives for the full play session. NOTE: UInfectionSpreadSubsystem was incorrectly listed here — corrected to UWorldSubsystem by ADR-0013."
+    referenced_by:
+      - docs/architecture/adr-0004-subsystem-module-architecture.md
+      - docs/architecture/adr-0013-infection-spread-architecture.md
+    added: "2026-05-19"
+    revised: "2026-05-20"
+
+  - purpose: subsystem_world_tier
+    status: active
+    api: "UWorldSubsystem — UInfectionSpreadSubsystem, UAlienSquadSubsystem, UInvestigationSubsystem, UDialogueSubsystem"
+    not: "UGameInstanceSubsystem for state that must reset on level transition"
+    adr: docs/architecture/adr-0004-subsystem-module-architecture.md
+    reason: "World-tier systems hold per-level state. UWorldSubsystem is auto-destroyed on level transition; Deinitialize() fires before world teardown. UInfectionSpreadSubsystem added by ADR-0013 (correcting ADR-0004 registry error)."
+    referenced_by:
+      - docs/architecture/adr-0004-subsystem-module-architecture.md
+      - docs/architecture/adr-0013-infection-spread-architecture.md
+    added: "2026-05-19"
+    revised: "2026-05-20"
+
+  - purpose: subsystem_player_tier
+    status: active
+    api: "ULocalPlayerSubsystem — UHUDSubsystem"
+    not: "UGameInstanceSubsystem for viewport-bound UI state"
+    adr: docs/architecture/adr-0004-subsystem-module-architecture.md
+    reason: "Player-tier systems are viewport-bound. Access from AHUD requires GetOwningPlayerController()->GetLocalPlayer()->GetSubsystem<T>()."
+    referenced_by:
+      - docs/architecture/adr-0004-subsystem-module-architecture.md
+    added: "2026-05-19"
+    revised: ""
+
+  - purpose: per_actor_state
+    status: active
+    api: "UActorComponent — UHealthComponent, UStealthComponent, UMovementComponent (custom), UCombatComponent"
+    not: "UGameInstanceSubsystem or UWorldSubsystem for per-actor state"
+    adr: docs/architecture/adr-0004-subsystem-module-architecture.md
+    reason: "Per-actor behaviour lives and dies with the owning AActor. Subsystems are for shared/coordination state, not per-instance behaviour."
+    referenced_by:
+      - docs/architecture/adr-0004-subsystem-module-architecture.md
+    added: "2026-05-19"
+    revised: ""
+
+  - purpose: primary_game_module
+    status: active
+    api: "HostileWorld — single primary module; all subsystems and gameplay classes in Source/HostileWorld/"
+    not: "Feature sub-modules per system (HostileWorldGSM, HostileWorldAI, etc.)"
+    adr: docs/architecture/adr-0004-subsystem-module-architecture.md
+    reason: "Single module keeps Build.cs simple and cross-system headers accessible. Extract only when a system has 20+ files and a stable reuse boundary."
+    referenced_by:
+      - docs/architecture/adr-0004-subsystem-module-architecture.md
+    added: "2026-05-19"
+    revised: ""
+
+  - purpose: game_data_bulk_tabular
+    status: active
+    api: "UDataTable + FTableRowBase — all bulk tabular game data (items, quests, clues, dialogue nodes, recipes, AI tuning)"
+    not: "UPrimaryDataAsset for fixed-schema row data; inline TArray<USTRUCT> hardcoded in source"
+    adr: docs/architecture/adr-0005-game-data-strategy.md
+    reason: "DataTable provides CSV/JSON import workflow for designers and O(log n) row lookup. Consistent format across all bulk data systems."
+    referenced_by:
+      - docs/architecture/adr-0005-game-data-strategy.md
+    added: "2026-05-19"
+    revised: ""
+
+  - purpose: game_data_complex_entity
+    status: active
+    api: "UPrimaryDataAsset subclass — entities requiring Blueprint subclassing or per-instance BP logic"
+    not: "UDataTable for entities with custom Blueprint behaviour per variant"
+    adr: docs/architecture/adr-0005-game-data-strategy.md
+    reason: "UPrimaryDataAsset supports inheritance and Blueprint override. Reserved for complex entities not expressible as flat rows."
+    referenced_by:
+      - docs/architecture/adr-0005-game-data-strategy.md
+    added: "2026-05-19"
+    revised: ""
+
+  - purpose: game_data_load_strategy
+    status: active
+    api: "TObjectPtr<UDataTable> UPROPERTY(EditDefaultsOnly) hard reference — all DataTable references on subsystems"
+    not: "TSoftObjectPtr<UDataTable> async streaming; StaticLoadObject/LoadObject at gameplay call sites"
+    adr: docs/architecture/adr-0005-game-data-strategy.md
+    reason: "Hard references guarantee tables are available from GameInstance::Init() at indie PC scale. Async complexity not justified until profiling shows need."
+    referenced_by:
+      - docs/architecture/adr-0005-game-data-strategy.md
+    added: "2026-05-19"
+    revised: ""
+
+  - purpose: save_serialization_format
+    status: active
+    api: "USaveGame subclass (UHostileWorldSaveGame) + UGameplayStatics::AsyncSaveGameToSlot / AsyncLoadGameFromSlot"
+    not: "FArchive custom binary; JSON file; blocking SaveGameToSlot on game thread"
+    adr: docs/architecture/adr-0006-save-load-serialization.md
+    reason: "USaveGame + UPROPERTY reflection handles versioning, Blueprint access, and schema evolution automatically. Async I/O prevents game-thread hitch at checkpoint. Single slot eliminates slot-management UI."
+    referenced_by:
+      - docs/architecture/adr-0006-save-load-serialization.md
+    added: "2026-05-20"
+    revised: ""
+
+  - purpose: save_async_delegate_binding
+    status: active
+    api: "FAsyncSaveGameToSlotDelegate::CreateUObject(this, &UClass::UFunctionMember)"
+    not: "CreateLambda or raw function pointer for async save/load callbacks"
+    adr: docs/architecture/adr-0006-save-load-serialization.md
+    reason: "Lambda captures are not GC-safe with async delegates. UFUNCTION member binding is the only safe pattern for USaveGame callbacks."
+    referenced_by:
+      - docs/architecture/adr-0006-save-load-serialization.md
+    added: "2026-05-20"
+    revised: ""
+
+  - purpose: physics_runtime
+    status: active
+    api: "Chaos Physics (UE 5.7 built-in) — UGeometryCollectionComponent for destruction, UPhysicalMaterial for surface materials"
+    not: "Legacy PhysX APIs; any pre-UE5 physics primitive types"
+    adr: docs/architecture/adr-0007-physics-collision-architecture.md
+    reason: "PhysX was removed in UE5. Chaos is the only available runtime. Geometry Collection is the Chaos-native destructible pipeline."
+    referenced_by:
+      - docs/architecture/adr-0007-physics-collision-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - purpose: custom_collision_channels
+    status: active
+    api: "EHostileCollision namespace aliases (HostileCollisionChannels.h) — ECC_GameTraceChannel1..8 mapped to Player/Alien/Infection/WorldObject/Vehicle/Projectile/Interactable/AIPerception"
+    not: "Raw ECC_GameTraceChannelN magic numbers in code; ECC_Visibility for gameplay-specific traces"
+    adr: docs/architecture/adr-0007-physics-collision-architecture.md
+    reason: "Named aliases prevent channel number collisions, make collision intent readable, and allow channel remapping via a single header change."
+    referenced_by:
+      - docs/architecture/adr-0007-physics-collision-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - purpose: world_streaming_authority
+    status: active
+    api: "World Partition (automatic, distance-based) — sole streaming authority for open world; separate UWorld for Mountain Prison via OpenLevel()"
+    not: "ALevelStreamingVolume or manual LevelStreaming actors in the open world; mixing LevelStreaming and World Partition in the same world"
+    adr: docs/architecture/adr-0008-scene-streaming-architecture.md
+    reason: "World Partition is UE5's production streaming system. Mixing LevelStreaming and World Partition in the same world produces undefined streaming behavior per Epic documentation."
+    referenced_by:
+      - docs/architecture/adr-0008-scene-streaming-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - purpose: data_layer_activation
+    status: active
+    api: "USceneManagementSubsystem::RequestDataLayerSwap(FName ZoneId, FName TargetLayer) — the only valid path for Data Layer activation/deactivation at runtime"
+    not: "Direct UDataLayerSubsystem::SetDataLayerInstanceRuntimeState() calls from any system other than USceneManagementSubsystem"
+    adr: docs/architecture/adr-0008-scene-streaming-architecture.md
+    reason: "Centralizing Data Layer writes enforces the DL swap state machine (rollback, queue, 3s debounce). Direct calls bypass rollback and produce inconsistent world state."
+    referenced_by:
+      - docs/architecture/adr-0008-scene-streaming-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - purpose: camera_mode_owner
+    status: active
+    api: "AHostileWorldPlayerCameraManager (APlayerCameraManager subclass) — owns all camera mode state, shake dispatch, recoil, and Cinematic delegation"
+    not: "ULocalPlayerSubsystem for camera mode state; UActorComponent on PlayerController for camera logic; UCameraMode stack (Lyra pattern — not a built-in engine API)"
+    adr: docs/architecture/adr-0009-camera-architecture.md
+    reason: "APlayerCameraManager is the engine's designated camera owner. UpdateViewTarget() runs in the camera manager; all engine shake and FOV APIs live on it. Any other owner requires polling the camera manager — forbidden pattern (ADR-0001)."
+    referenced_by:
+      - docs/architecture/adr-0009-camera-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - purpose: movement_component_pattern
+    status: active
+    api: "UHostileMovementComponent : UCharacterMovementComponent — CMC subclass with PhysCustom(0)=Dodge, PhysCustom(1)=Cover; UCoverComponent : UActorComponent for cover proximity"
+    not: "UGameplayAbility (GAS) for sprint/dodge/cover; full custom physics bypassing CMC; separate UMovementStateMachineComponent alongside CMC"
+    adr: docs/architecture/adr-0010-movement-architecture.md
+    reason: "CMC subclassing is canonical UE5 pattern — preserves NavMesh agent integration, foot IK floor data, ramp/step handling, and replication base. GAS adds unjustified module overhead for single-player. Separate state machine component creates CMC synchronisation hazards."
+    referenced_by:
+      - docs/architecture/adr-0010-movement-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - purpose: cover_detection_pattern
+    status: active
+    api: "UCoverComponent FTimerHandle at 4Hz + event triggers on IA_Crouch input and direction change — never per-frame SphereOverlap"
+    not: "Per-frame SphereOverlapActors in Tick(); CMC-internal cover detection"
+    adr: docs/architecture/adr-0010-movement-architecture.md
+    reason: "Per-frame overlap queries for cover detection violate polling_state_in_tick forbidden pattern. 4Hz poll + event triggers provide sufficient responsiveness (≤250ms latency) at ~0.1ms amortised cost."
+    referenced_by:
+      - docs/architecture/adr-0010-movement-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - purpose: noise_emission_api
+    status: active
+    api: "UAIPerceptionSystem::MakeNoise(Instigator, Loudness, NoiseInstigator, Location) OR FAINoiseEvent + UAIPerceptionSystem::ReportEvent()"
+    not: "UAIPerceptionSystem::ReportNoise() (does not exist); UAIPerceptionComponent::ReportNoise() (does not exist); manual per-alien noise delivery"
+    adr: docs/architecture/adr-0010-movement-architecture.md
+    reason: "MakeNoise() is the stable static helper (UE4+) that internally constructs FAINoiseEvent and dispatches to all registered UAISenseConfig_Hearing listeners. ReportNoise() does not exist on either class — confirmed by engine specialist review."
+    referenced_by:
+      - docs/architecture/adr-0010-movement-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - purpose: animation_blueprint_pattern
+    status: active
+    api: "UHostileWorldAnimInstance : UAnimInstance + Linked Anim Layers (UHostileCombatLayer, UHostileCoverLayer, UHostileLocomotionLayer) switched via LinkAnimClassLayers()/UnlinkAnimClassLayers()"
+    not: "Single monolithic ABP state machine with all body regions inline; dual USkeletalMeshComponent (master-pose) for body splits; Control Rig VM for full-body procedural animation"
+    adr: docs/architecture/adr-0011-animation-architecture.md
+    reason: "Linked Anim Layers eliminate combinatorial state explosion (8 movement states × 4 weapon types × cover on/off). They are the UE5-native split-body solution within a single skeletal mesh component."
+    referenced_by:
+      - docs/architecture/adr-0011-animation-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - purpose: foot_ik_implementation
+    status: active
+    api: "IK Rig runtime node in ABP post-process graph (IKRig_HostileCharacter) — two foot goals (IK_Foot_L, IK_Foot_R) with alpha-based enable/disable"
+    not: "Control Rig VM node for foot IK (heavier than IK Rig; unjustified overhead for two-bone foot IK); legacy Two Bone IK node without pelvis correction; foot IK disabled entirely"
+    adr: docs/architecture/adr-0011-animation-architecture.md
+    reason: "IK Rig runtime node is purpose-built for limb IK and lighter than Control Rig VM. movement-system.md mandates foot IK on all locomotion surfaces. Alpha-based blending on the IK node disables cleanly during Dodge/Jump/Fall without graph branching."
+    referenced_by:
+      - docs/architecture/adr-0011-animation-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - purpose: ai_framework
+    status: active
+    api: "Behavior Trees (UBehaviorTreeComponent) + UAIPerceptionComponent + Environment Query System (UEnvQueryManager) — UE5 native AI stack"
+    not: "Custom FSM UActorComponent for alien decision-making; GAS (Gameplay Ability System) for attack execution"
+    adr: docs/architecture/adr-0012-alien-ai-system.md
+    reason: "BT provides visual editor, abort logic, and service scheduling purpose-built for this use case. EQS abstracts spatial queries. Custom FSM reinvents the stack; GAS adds unjustified module overhead for single-player (same rejection as ADR-0004 for movement)."
+    referenced_by:
+      - docs/architecture/adr-0012-alien-ai-system.md
+    added: "2026-05-20"
+    revised: ""
+
+  - purpose: navmesh_runtime_area_painting
+    status: active
+    api: "UNavModifierComponent on pooled actors spawned by UInfectionSpreadSubsystem — painted automatically when Runtime Generation = Dynamic"
+    not: "UNavSystem::ApplyRadiusModifier (class does not exist in UE5); UNavigationSystemV1 method call for area painting; direct NavMesh tile mutation"
+    adr: docs/architecture/adr-0012-alien-ai-system.md
+    reason: "UNavModifierComponent is the UE5-native pattern for runtime NavArea painting. It registers with the navigation octree automatically and handles World Partition dynamic cell loading. UNavSystem does not exist — the correct runtime access class is UNavigationSystemV1, used for path queries only."
+    referenced_by:
+      - docs/architecture/adr-0012-alien-ai-system.md
+      - docs/architecture/adr-0013-infection-spread-architecture.md
+    added: "2026-05-20"
+    revised: ""
+
+  - purpose: infection_source_damage_api
+    status: active
+    api: "IInfectionSpreadInterface::DamageInfectionSource(FGuid SourceId, float Amount) → bool — the only valid path for reducing infection source HP"
+    not: "Direct HP field mutation on FInfectionSourceData; calling TakeDamage on the source actor; Combat System managing source HP internally"
+    adr: docs/architecture/adr-0013-infection-spread-architecture.md
+    reason: "Infection sources are not standard health actors — they have no UHealthComponent. UInfectionSpreadSubsystem manages source HP internally and decides when to set bDestroyed. All damage must go through DamageInfectionSource() to ensure consistent source lifecycle management."
+    referenced_by:
+      - docs/architecture/adr-0013-infection-spread-architecture.md
+    added: "2026-05-20"
+    revised: ""
 
 # Example:
 #
@@ -157,7 +847,197 @@ api_decisions: []
 # Register a pattern when an ADR explicitly bans it AND other ADRs might
 # unknowingly use it (i.e., it's a tempting but wrong approach for this project).
 
-forbidden_patterns: []
+forbidden_patterns:
+  - pattern: polling_state_in_tick
+    status: active
+    description: "A Tick() function must not read another system's state to detect changes. Subscribe to the state change event instead."
+    why: "Polling creates hidden per-frame CPU overhead and breaks the event-driven architecture. Every system polling every other system at 60fps is unmaintainable."
+    adr: docs/architecture/adr-0001-cross-system-communication.md
+    added: "2026-05-15"
+
+  - pattern: direct_cross_system_state_write
+    status: active
+    description: "A system must never write to state owned by another system. Use method calls on the owning system instead."
+    why: "Direct state writes create race conditions, break state ownership, and make systems untestable in isolation."
+    adr: docs/architecture/adr-0001-cross-system-communication.md
+    added: "2026-05-15"
+
+  - pattern: autoload_singleton_gsm
+    status: active
+    description: "UHostileWorldGSM must not be held as a static pointer. Access via GetGameInstance()->GetSubsystem<UHostileWorldGSM>()."
+    why: "Static pointers are not GC-safe, invisible to engine tooling, and break in PIE with multiple worlds."
+    adr: docs/architecture/adr-0002-game-state-machine-implementation.md
+    added: "2026-05-15"
+
+  - pattern: legacy_input_system
+    status: active
+    description: "BindAction/BindAxis on raw UInputComponent must not be used. All input bindings use UEnhancedInputComponent::BindAction() on TObjectPtr<UInputAction> assets."
+    why: "Legacy input is deprecated in UE5, has no context switching, no runtime rebinding, and will be removed in future versions."
+    adr: docs/architecture/adr-0003-enhanced-input-architecture.md
+    added: "2026-05-19"
+
+  - pattern: blueprint_event_dispatchers_for_cpp_core
+
+  - pattern: blueprint_event_dispatchers_for_cpp_core
+    status: active
+    description: "Blueprint Event Dispatchers must not be used for C++ core system communication. Use DECLARE_DYNAMIC_MULTICAST_DELEGATE instead."
+    why: "BP dispatchers are not type-safe at the C++ boundary and create hidden coupling between C++ and Blueprint layers. Core system contracts must be defined in C++."
+    adr: docs/architecture/adr-0001-cross-system-communication.md
+    added: "2026-05-15"
+
+  - pattern: static_subsystem_pointer
+    status: active
+    description: "Subsystem instances must never be cached in a static pointer or member variable. Always call GetSubsystem<T>() at the call site."
+    why: "Static pointers are not GC-safe, invisible to engine tooling, and break in PIE multi-world where multiple subsystem instances exist."
+    adr: docs/architecture/adr-0004-subsystem-module-architecture.md
+    added: "2026-05-19"
+
+  - pattern: initialize_peer_caching
+    status: active
+    description: "UGameInstanceSubsystem::Initialize() must not call GetSubsystem<T>() on a peer unless preceded by Collection.InitializeDependency<T>(). Peer initialization order is not guaranteed."
+    why: "Peer Initialize() ordering within a tier is undefined. Caching a peer in Initialize() returns a valid pointer to an uninitialized subsystem, producing silent undefined behaviour."
+    adr: docs/architecture/adr-0004-subsystem-module-architecture.md
+    added: "2026-05-19"
+
+  - pattern: hud_direct_get_local_player
+    status: active
+    description: "AHUD must not call GetLocalPlayer() directly — that method does not exist on AHUD. Use GetOwningPlayerController()->GetLocalPlayer()->GetSubsystem<T>()."
+    why: "AHUD exposes GetOwningPlayerController(), not GetLocalPlayer(). Calling a nonexistent method fails to compile and indicates a misunderstanding of the UMG/HUD object hierarchy."
+    adr: docs/architecture/adr-0004-subsystem-module-architecture.md
+    added: "2026-05-19"
+
+  - pattern: cross_subsystem_datatable_access
+    status: active
+    description: "A subsystem must not hold a TObjectPtr<UDataTable> to a table it does not own, nor call FindRow on another subsystem's table. Request data via a method call on the owning subsystem instead."
+    why: "Cross-subsystem table access breaks state ownership (ADR-0001), creates hidden coupling, and makes subsystems untestable in isolation."
+    adr: docs/architecture/adr-0005-game-data-strategy.md
+    added: "2026-05-19"
+
+  - pattern: findrow_unchecked_result
+    status: active
+    description: "FindRow<T>() return value must be null-checked before dereferencing. Never assume a row exists."
+    why: "FindRow returns nullptr on any miss (wrong RowName, wrong struct type, empty table). An unchecked dereference crashes at runtime with no error context."
+    adr: docs/architecture/adr-0005-game-data-strategy.md
+    added: "2026-05-19"
+
+  - pattern: findrow_empty_context_string
+    status: active
+    description: "FindRow<T>(RowName, ContextString) must be called with a non-empty ContextString identifying the call site (e.g. TEXT(\"UInventorySubsystem::GetItemDefinition\"))."
+    why: "An empty ContextString makes lookup failures silent in the output log, turning data authoring errors into invisible runtime bugs."
+    adr: docs/architecture/adr-0005-game-data-strategy.md
+    added: "2026-05-19"
+
+  - pattern: direct_async_save_call
+    status: active
+    description: "No subsystem may call UGameplayStatics::AsyncSaveGameToSlot or AsyncLoadGameFromSlot directly. All save/load I/O must go through USaveLoadSubsystem::TriggerAutosave() and LoadSaveOnStartup()."
+    why: "Direct save calls from multiple subsystems produce race conditions, duplicate writes, and bypass the IHostileSaveProvider aggregation contract. USaveLoadSubsystem is the sole save authority."
+    adr: docs/architecture/adr-0006-save-load-serialization.md
+    added: "2026-05-20"
+
+  - pattern: uobject_in_save_struct
+    status: active
+    description: "No save USTRUCT (FTutorialSaveData, FQuestSaveData, FFactionSaveData, FInventorySaveData, FInfectionSaveData, or any future save sub-struct) may contain UObject*, TObjectPtr<>, or TWeakObjectPtr<> fields."
+    why: "USaveGame serialization silently drops UObject* fields — object references do not survive save/load. Only primitive types, FString, FName, TArray/TMap/TSet of primitives are safe."
+    adr: docs/architecture/adr-0006-save-load-serialization.md
+    added: "2026-05-20"
+
+  - pattern: save_lambda_delegate
+    status: active
+    description: "FAsyncSaveGameToSlotDelegate and FAsyncLoadGameFromSlotDelegate must not be bound via CreateLambda. Use CreateUObject(this, &UClass::UFunctionMember) with a UFUNCTION-marked member."
+    why: "Lambda captures are not GC-safe with async delegates. If the lambda captures a UObject* that is garbage-collected between the save call and the callback, the callback dereferences a dangling pointer — silent crash."
+    adr: docs/architecture/adr-0006-save-load-serialization.md
+    added: "2026-05-20"
+
+  - pattern: legacy_physx_apis
+    status: active
+    description: "No legacy PhysX primitive types, NxActor, or pre-UE5 physics APIs may be used. All physics is Chaos-native."
+    why: "PhysX was removed in UE5. Any legacy physics API will fail to compile in UE 5.7."
+    adr: docs/architecture/adr-0007-physics-collision-architecture.md
+    added: "2026-05-20"
+
+  - pattern: async_physics_with_sync_queries
+    status: active
+    description: "bTickPhysicsAsync must remain disabled (default). Do not enable async physics without revising ADR-0007."
+    why: "Enabling async physics decouples physics state from the game thread. UPhysicsHelperSubsystem::GetSurfaceType() would read stale frame-N-1 data, producing incorrect surface classification and fall damage calculation."
+    adr: docs/architecture/adr-0007-physics-collision-architecture.md
+    added: "2026-05-20"
+
+  - pattern: raw_collision_channel_numbers
+    status: active
+    description: "Raw ECC_GameTraceChannelN enum values must not be used in gameplay code. Use EHostileCollision:: namespace aliases from HostileCollisionChannels.h."
+    why: "Magic channel numbers are unreadable and break silently if DefaultEngine.ini channel order changes. Named aliases make intent explicit and centralise remapping."
+    adr: docs/architecture/adr-0007-physics-collision-architecture.md
+    added: "2026-05-20"
+
+  - pattern: manual_level_streaming_in_open_world
+    status: active
+    description: "No ALevelStreamingVolume, manual LevelStreaming actor, or ULevelStreamingDynamic calls may exist in the open world map. World Partition is the sole streaming authority."
+    why: "World Partition and manual LevelStreaming are competing authorities. Mixing them in the same world produces undefined streaming behavior: double-streaming, incorrect cell unloads, missing collision."
+    adr: docs/architecture/adr-0008-scene-streaming-architecture.md
+    added: "2026-05-20"
+
+  - pattern: direct_data_layer_write
+    status: active
+    description: "No subsystem may call UDataLayerSubsystem::SetDataLayerInstanceRuntimeState() directly. All Data Layer activation must go through USceneManagementSubsystem::RequestDataLayerSwap()."
+    why: "Direct Data Layer writes bypass the DL_Idle→Active state machine, skip rollback logic, ignore the swap queue, and bypass the 3.0s debounce. This leaves the world in an inconsistent partial state."
+    adr: docs/architecture/adr-0008-scene-streaming-architecture.md
+    added: "2026-05-20"
+
+  - pattern: direct_stamina_write
+    status: active
+    description: "UHostileMovementComponent must never write AHostileCharacter's stamina float directly. All stamina writes go through AHostileCharacter::ConsumeStamina(float) and AHostileCharacter::RegenStamina(float DeltaTime). CMC queries via CanSprint/CanDodge/CanJump (read-only)."
+    why: "Direct stamina writes from CMC couple the physics component to character state, break testability, and violate direct_cross_system_state_write (ADR-0001). Stamina authority belongs to AHostileCharacter."
+    adr: docs/architecture/adr-0010-movement-architecture.md
+    added: "2026-05-20"
+
+  - pattern: mid_tick_cover_exit
+    status: active
+    description: "UCoverComponent must not call SetMovementMode() to exit cover mid-tick. Cover exit must be deferred to UpdateCharacterStateAfterMovement() to prevent one-frame state flicker."
+    why: "Calling SetMovementMode() during PhysCustom() execution changes the mode while CMC is still processing the current frame's physics. This produces a one-frame inconsistency between the movement state enum and the actual physics mode, causing visible character position jitter."
+    adr: docs/architecture/adr-0010-movement-architecture.md
+    added: "2026-05-20"
+
+  - pattern: direct_ia_binding_in_movement
+    status: active
+    description: "UHostileMovementComponent and UCoverComponent must not call BindAction() on any UInputAction directly. Movement input is received exclusively via AHostileWorldPlayerController multicast delegates (OnMove, OnSprint, OnCrouch, OnJump, OnDodge, OnLean*)."
+    why: "ADR-0003 establishes PC as the sole IA_* binding location. Direct CMC binding bypasses IMC context switching, breaks the thin-router pattern, and produces input that fires regardless of active mapping context."
+    adr: docs/architecture/adr-0010-movement-architecture.md
+    added: "2026-05-20"
+
+  - pattern: anim_bp_movement_state_polling
+    status: active
+    description: "UHostileWorldAnimInstance::NativeUpdateAnimation() must not call UHostileMovementComponent::GetCurrentMovementState() to detect state transitions. CachedMovementState is updated exclusively by the OnMovementStateChanged delegate callback."
+    why: "Calling GetCurrentMovementState() each tick to detect state changes violates polling_state_in_tick (ADR-0001). Montage triggers and layer switches are event-driven, not tick-polled. Reading velocity/speed/direction for blending is permitted — that is continuous interpolation, not change detection."
+    adr: docs/architecture/adr-0011-animation-architecture.md
+    added: "2026-05-20"
+
+  - pattern: direct_montage_play
+    status: active
+    description: "External systems (Combat System, Movement System) must not call GetMesh()->GetAnimInstance()->Montage_Play() directly. All external montage requests must go through AHostileCharacter proxy methods: PlayFireMontage(), PlayReloadMontage(), PlayMeleeMontage(). Internal ABP callbacks (dodge, cover) call Montage_Play() inside UHostileWorldAnimInstance."
+    why: "Direct Montage_Play() calls bypass the UHostileWorldAnimInstance abstraction, create direct coupling between callers and ABP internals, and prevent the animation system from managing slot priority, blend weight, and montage state coherently."
+    adr: docs/architecture/adr-0011-animation-architecture.md
+    added: "2026-05-20"
+
+  - pattern: perception_without_setperception
+    status: active
+    description: "When UAIPerceptionComponent lives on AAlienCharacter (not on AAlienAIController), the controller MUST call SetPerceptionComponent(*PerceptionComp) in OnPossess(). Omitting this makes GetPerceptionComponent() on the controller return null."
+    why: "The UE5 AI system uses the controller's perception component pointer for threat map bookkeeping and dominant-sense resolution. If the component is on the Character but not registered with the controller, any BT service or task that navigates through AAIController::GetPerceptionComponent() will dereference null and crash."
+    adr: docs/architecture/adr-0012-alien-ai-system.md
+    added: "2026-05-20"
+
+  - pattern: damage_sense_implicit_fire
+    status: active
+    description: "UAISenseConfig_Damage does NOT fire automatically when ApplyDamage() is called on an alien. The combat damage pipeline MUST explicitly call UAIPerceptionSystem::ReportDamageEvent(World, DamagedActor, Instigator, Location, HitDirection, Amount) after each damage application."
+    why: "UAISense_Damage is a passive listener — it only processes FAIDamageEvent structs delivered via ReportDamageEvent. There is no hook into the engine's TakeDamage pathway. Relying on implicit firing means the alien never perceives being shot."
+    adr: docs/architecture/adr-0012-alien-ai-system.md
+    added: "2026-05-20"
+
+  - pattern: direct_infection_subsystem_cast
+    status: active
+    description: "No system may Cast<UInfectionSpreadSubsystem>(GetWorld()->GetSubsystem<UInfectionSpreadSubsystem>()) and call methods directly. All callers must use Cast<IInfectionSpreadInterface> on the subsystem pointer."
+    why: "Direct type cast couples callers to the concrete implementation class, breaking testability and the interface contract established by ADR-0013. IInfectionSpreadInterface is the stable API surface — the concrete class is an implementation detail."
+    adr: docs/architecture/adr-0013-infection-spread-architecture.md
+    added: "2026-05-20"
 
 # Example:
 #

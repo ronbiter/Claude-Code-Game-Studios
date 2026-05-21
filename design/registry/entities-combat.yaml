@@ -1,0 +1,70 @@
+# Entity Registry — Combat Domain
+#
+# PURPOSE: Combat formula (disengagement_timer) + combat/detection state constants.
+# Load when working on: combat-system, stealth-system, alien-ai-system, game-state-machine.
+#
+# Part of the split registry. Entry point: design/registry/entities-index.yaml
+
+version: 1
+last_updated: "2026-05-21"
+
+formulas:
+  - name: disengagement_timer
+    status: active
+    source: design/gdd/combat-system.md
+    referenced_by:
+      - design/gdd/combat-system.md
+      - design/gdd/stealth-system.md      # detection decay is separate; combat exit defers to T_disengage
+      - design/gdd/alien-ai-system.md      # alien Combat/Detected state exits per T_disengage, not a local 10.0s
+    variables:
+      - T_base
+      - N_alive
+      - T_per_alien
+      - M_cover
+      - T_cover_bonus
+    output_range: [7.0, 30.0]
+    expression: "T_disengage = T_base + N_alive × T_per_alien + M_cover × T_cover_bonus"
+    notes: "Output in seconds. T_base=10.0, T_per_alien=2.0, T_cover_bonus=-3.0, N_alive clamped [0,10], M_cover boolean. SINGLE AUTHORITY for combat end — Combat System owns it; Alien AI and Stealth reference it rather than re-defining (resolves cross-review 2026-05-20-1516 B-1/B-2). Alien AI's 5.0s return-to-patrol is layered AFTER this, not a competing timer."
+    added: 2026-05-20
+    revised: ""
+
+constants:
+  # ─── Combat / Detection State Constants ────────────────────────────────────
+  # Unified combat-state model (cross-review 2026-05-20-1516). Three distinct
+  # concepts must not be conflated: alien combat behavior (≥75), player Combat
+  # Mode / IMC_Combat (=100, Combat-owned), and the IsPlayerUnderThreat()
+  # narrative gate (≥75).
+  - name: combat_mode_threshold
+    status: active
+    source: design/gdd/combat-system.md
+    referenced_by:
+      - design/gdd/combat-system.md
+      - design/gdd/stealth-system.md
+      - design/gdd/alien-ai-system.md
+      - design/gdd/game-state-machine.md
+    value: 100
+    unit: detection_score
+    added: 2026-05-20
+    revised: ""
+    # Player Combat Mode (IMC_Combat + combat music + 65° FOV) engages ONLY at
+    # detection=100 (Detected), or when the player attacks an alien, or a patrol
+    # forces combat per Combat Rule 5. NOT at 75. Preserves "no warning before
+    # attack" (Pillar 3). Combat System is sole owner of IMC_Combat push/pop.
+
+  - name: under_threat_threshold
+    status: active
+    source: design/gdd/stealth-system.md
+    referenced_by:
+      - design/gdd/stealth-system.md
+      - design/gdd/alien-ai-system.md
+      - design/gdd/investigation-system.md
+      - design/gdd/quest-system.md
+      - design/gdd/faction-reputation-system.md
+    value: 75
+    unit: detection_score
+    added: 2026-05-20
+    revised: ""
+    # IsPlayerUnderThreat() == (detection ≥ 75). Single signal narrative systems
+    # read to defer revelations, quest-consequence delivery, and faction toasts
+    # while the player is actively hunted (Pillar 2, Earned Discovery). Backed by
+    # Alien AI blackboard bIsInCombat. Distinct from combat_mode_threshold (100).

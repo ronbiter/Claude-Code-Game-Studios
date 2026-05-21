@@ -1,0 +1,147 @@
+# Entity Registry — Movement Domain
+#
+# PURPOSE: Movement formulas and constants.
+# Load when working on: movement-system.
+#
+# Part of the split registry. Entry point: design/registry/entities-index.yaml
+
+version: 1
+last_updated: "2026-05-21"
+
+formulas:
+  - name: effective_move_speed
+    status: active
+    source: design/gdd/movement-system.md
+    referenced_by:
+      - design/gdd/movement-system.md
+    variables:
+      - V_base(S)
+      - M_input
+      - M_surface
+      - M_stamina
+      - M_slope
+    output_range: [0, 1170]
+    expression: "V_base(S) × M_input × M_surface × M_stamina × M_slope"
+    notes: "Output in cm/s. Multiplicative stacking prevents degenerate combinations. Slope modifier creates downhill speed assist up to 1.3x."
+    added: 2026-04-29
+    revised: ""
+
+  - name: stamina_consumption
+    status: active
+    source: design/gdd/movement-system.md
+    referenced_by:
+      - design/gdd/movement-system.md
+    variables:
+      - R_drain
+      - C_flat
+      - Δt
+      - S_cur
+    output_range: [0, 25]
+    expression: "R_drain × Δt (continuous) or C_flat (discrete)"
+    notes: "Frame-rate independent. Sprint drains 15/s; Dodge costs 25 flat; Jump costs 10 flat."
+    added: 2026-04-29
+    revised: ""
+
+  - name: stamina_regeneration
+    status: active
+    source: design/gdd/movement-system.md
+    referenced_by:
+      - design/gdd/movement-system.md
+    variables:
+      - R_regen
+      - M_state
+      - M_surface
+      - M_exhaust
+      - T_delay
+    output_range: [0, 24]
+    expression: "R_regen × M_state × M_surface × M_exhaust (after T_delay)"
+    notes: "Effective rate 0–24/s. Worst case (crouch+biomass+exhaust): 4.8/s."
+    added: 2026-04-29
+    revised: ""
+
+  - name: noise_emission_radius
+    status: active
+    source: design/gdd/movement-system.md
+    referenced_by:
+      - design/gdd/movement-system.md
+    variables:
+      - N_base(S)
+      - M_surface_noise
+      - N_exhaust
+      - K_scale
+    output_range: [0, 200]
+    expression: "clamp((N_base(S) × M_surface_noise + N_exhaust) × K_scale, 0, 200)"
+    notes: "Output in meters. K_scale=1.5. Exhaustion adds +15 flat noise before scaling."
+    added: 2026-04-29
+    revised: ""
+
+  - name: dodge_displacement
+    status: active
+    source: design/gdd/movement-system.md
+    referenced_by:
+      - design/gdd/movement-system.md
+    variables:
+      - V_current
+      - T_windup
+      - V_dodge_burst
+      - T_active
+      - V_recovery
+      - T_recovery
+    output_range: [290, 380]
+    expression: "(V_current × T_windup) + (V_dodge_burst × T_active) + (V_recovery × T_recovery)"
+    notes: "Output in cm. GDD '~200 cm' refers to active burst only. Total includes momentum carry and recovery."
+    added: 2026-04-29
+    revised: ""
+
+constants:
+  # ─── Movement System Constants ─────────────────────────────────────────────
+  - name: fall_safe_velocity
+    status: active
+    source: design/gdd/movement-system.md
+    referenced_by:
+      - design/gdd/movement-system.md
+      - design/gdd/physics-system.md
+    value: 800
+    unit: cm/s
+    added: 2026-04-29
+    revised: ""
+
+  - name: cover_entry_proximity
+    status: active
+    source: design/gdd/movement-system.md
+    referenced_by:
+      - design/gdd/movement-system.md
+    value: 80
+    unit: cm
+    added: 2026-04-29
+    revised: ""
+
+  - name: exhaustion_noise_floor
+    status: active
+    source: design/gdd/movement-system.md
+    referenced_by:
+      - design/gdd/movement-system.md
+    value: 22.5
+    unit: meters
+    added: 2026-04-29
+    revised: ""
+
+  - name: dodge_min_displacement
+    status: active
+    source: design/gdd/movement-system.md
+    referenced_by:
+      - design/gdd/movement-system.md
+    value: 290
+    unit: cm
+    added: 2026-04-29
+    revised: ""
+
+  - name: crouch_landing_input_window
+    status: active
+    source: design/gdd/movement-system.md
+    referenced_by:
+      - design/gdd/movement-system.md
+    value: 0.15
+    unit: seconds
+    added: 2026-04-29
+    revised: ""

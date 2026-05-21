@@ -264,7 +264,7 @@ Fear recovery is tracked by the Dialogue System but triggered by world events (C
 
 ```cpp
 // Dialogue System public interface (C++ sketch)
-class UDialogueSubsystem : public UGameInstanceSubsystem {
+class UDialogueSubsystem : public UWorldSubsystem {
     // Dialogue lifecycle
     void StartDialogue(FNPCId NPCId);
     void EndDialogue();

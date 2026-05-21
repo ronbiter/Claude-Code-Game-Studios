@@ -67,7 +67,7 @@ Read for in-scope systems:
 
 - `design/gdd/systems-index.md` — authoritative system list, layers, priority
 - In-scope GDDs only (Approved or Designed status, filtered by Step 2a results)
-- `docs/architecture/architecture.md` — module ownership and API boundaries
+- `docs/registry/adr-index.yaml` — ADR index; load relevant domain file (`adr-{domain}.yaml`) for module ownership and API boundaries
 - Accepted ADRs **whose domains cover in-scope systems only** — read the "GDD Requirements Addressed", "Decision", and "Engine Compatibility" sections; skip ADRs for unrelated domains
 - `docs/architecture/control-manifest.md` — manifest version date from header
 - `docs/architecture/tr-registry.yaml` — for tracing requirements to ADR coverage
@@ -91,7 +91,7 @@ Within each layer, use the order from `systems-index.md`.
 
 ## 4. Define Each Epic
 
-For each system, map it to an architectural module from `architecture.md`.
+For each system, map it to an architectural module from `docs/registry/adr-index.yaml` (load the relevant domain file for details).
 
 Check ADR coverage against the TR registry:
 - **Traced requirements**: TR-IDs that have an Accepted ADR covering them
@@ -104,7 +104,7 @@ Present to user before writing anything:
 
 **Layer**: [Foundation / Core / Feature / Presentation]
 **GDD**: design/gdd/[filename].md
-**Architecture Module**: [module name from architecture.md]
+**Architecture Module**: [module name from domain registry]
 **Governing ADRs**: [ADR-NNNN, ADR-MMMM]
 **Engine Risk**: [LOW / MEDIUM / HIGH — highest risk among governing ADRs]
 **GDD Requirements Covered by ADRs**: [N / total]

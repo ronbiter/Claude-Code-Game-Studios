@@ -1,0 +1,237 @@
+# Entity Registry — World Domain
+#
+# PURPOSE: Factions + scene management and zone/streaming constants.
+# Load when working on: scene-management, faction-reputation-system.
+#
+# Part of the split registry. Entry point: design/registry/entities-index.yaml
+
+version: 1
+last_updated: "2026-05-21"
+
+entities:
+  - name: the_remnant
+    status: active
+    source: design/gdd/faction-reputation-system.md
+    referenced_by:
+      - design/gdd/faction-reputation-system.md
+    type: faction
+    zone: mountain_outpost_bunker
+    description: Ex-military survivors from the prison complex. Organized, armed, pragmatic.
+    initial_relationship_tethered: Rival
+    added: 2026-05-05
+    revised: ""
+
+  - name: the_tethered
+    status: active
+    source: design/gdd/faction-reputation-system.md
+    referenced_by:
+      - design/gdd/faction-reputation-system.md
+    type: faction
+    zone: Z02
+    description: Civilian survivors who stayed and adapted. Scavengers, medics, desperate families.
+    initial_relationship_remnant: Rival
+    added: 2026-05-05
+    revised: ""
+
+  - name: the_hollowed
+    status: active
+    source: design/gdd/faction-reputation-system.md
+    referenced_by:
+      - design/gdd/faction-reputation-system.md
+    type: faction
+    zone: underground_tunnels_hive_fringer
+    description: Infected-but-sentient humans. Not fully alien, not fully human.
+    priority: post_vertical_slice
+    added: 2026-05-05
+    revised: ""
+
+  - name: the_watch
+    status: active
+    source: design/gdd/faction-reputation-system.md
+    referenced_by:
+      - design/gdd/faction-reputation-system.md
+    type: faction
+    zone: ridge_overlook_radio_tower
+    description: Isolationist observers. Former researchers who document rather than intervene.
+    priority: post_vertical_slice
+    added: 2026-05-05
+    revised: ""
+
+constants:
+  # ─── World Partition Constants ─────────────────────────────────────────────
+  - name: wp_cell_size
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: 25200000
+    unit: cm
+    added: 2026-04-29
+    revised: "2026-04-29"
+    # was: 25600 — corrected from 256m hypothesis to 2520m (UE5 World Partition standard)
+
+  - name: wp_hlod_grid_size
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: 25200000
+    unit: cm
+    added: 2026-04-29
+    revised: "2026-04-29"
+    # was: 51200 — HLOD grid matches cell size (2520m)
+
+  - name: streaming_distance_high_lod
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: 12800000
+    unit: cm
+    added: 2026-04-29
+    revised: "2026-04-29"
+    # was: 12800 — corrected to 128m (0.5 cells)
+
+  - name: streaming_distance_medium_lod
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: 38400000
+    unit: cm
+    added: 2026-04-29
+    revised: "2026-04-29"
+    # was: 38400 — corrected to 384m (1.5 cells)
+
+  - name: streaming_distance_low_lod
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: 76800000
+    unit: cm
+    added: 2026-04-29
+    revised: "2026-04-29"
+    # was: 76800 — corrected to 768m (3 cells)
+
+  - name: streaming_distance_unload
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: 102400000
+    unit: cm
+    added: 2026-04-29
+    revised: "2026-04-29"
+    # was: 102400 — corrected to 1024m (4 cells)
+
+  - name: seamless_transition_threshold
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: 4
+    unit: cells
+    added: 2026-04-29
+    revised: ""
+
+  - name: data_layer_activation_latency
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: 2.0
+    unit: seconds
+    added: 2026-04-29
+    revised: ""
+
+  - name: loading_timeout
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: 30
+    unit: seconds
+    added: 2026-04-29
+    revised: ""
+
+  - name: max_concurrent_streaming_requests
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: 8
+    unit: requests
+    added: 2026-04-29
+    revised: ""
+
+  - name: wp_bandwidth_split_world_partition
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: 60
+    unit: percent
+    added: 2026-04-29
+    revised: ""
+
+  - name: wp_bandwidth_split_data_layers
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: 40
+    unit: percent
+    added: 2026-04-29
+    revised: ""
+
+  # ─── Zone Definitions ──────────────────────────────────────────────────────
+  - name: zone_mountain_prison
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: Z01
+    unit: zone_id
+    added: 2026-04-29
+    revised: ""
+
+  - name: zone_infected_town
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: Z02
+    unit: zone_id
+    added: 2026-04-29
+    revised: ""
+
+  - name: zone_resistance_camp
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: Z03
+    unit: zone_id
+    added: 2026-04-29
+    revised: ""
+
+  - name: zone_alien_hive
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: Z04
+    unit: zone_id
+    added: 2026-04-29
+    revised: ""
+
+  - name: zone_dead_zone
+    status: active
+    source: design/gdd/scene-management.md
+    referenced_by:
+      - design/gdd/scene-management.md
+    value: Z05
+    unit: zone_id
+    added: 2026-04-29
+    revised: ""
