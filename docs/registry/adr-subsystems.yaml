@@ -5,8 +5,8 @@
 #
 # ADRs in this domain: ADR-0002, ADR-0004, ADR-0010, ADR-0012, ADR-0013
 
-version: 1
-last_updated: "2026-05-20"
+version: 2
+last_updated: "2026-05-26"
 
 # ─── STATE OWNERSHIP ─────────────────────────────────────────────────────────
 
@@ -77,6 +77,40 @@ state_ownership:
     added: "2026-05-20"
     revised: ""
 
+  - state: player_health
+    status: active
+    owner_system: UHealthComponent
+    adr: docs/architecture/adr-0015-health-system-architecture.md
+    interface: "GetCurrentHP() → int32; GetMaxHP() → int32 (always 100); GetInjuryState() → EInjuryState; GetStaminaRegenMultiplier() → float; IsAlive() → bool; IsInvulnerable() → bool. Damage entry: ApplyDamage(float Amount, EDamageType) called via AHostileCharacter::TakeDamage() override. Healing entry: StartHealing(EConsumableType) / CancelHealing()."
+    write_access: UHealthComponent-only (CurrentHP modified only inside ApplyDamage() and CompleteHealing(); no external HP write path)
+    referenced_by:
+      - docs/architecture/adr-0015-health-system-architecture.md
+    added: "2026-05-24"
+    revised: ""
+
+  - state: stealth_detection_state
+    status: active
+    owner_system: UStealthSubsystem
+    adr: docs/architecture/adr-0017-stealth-system-architecture.md
+    interface: "IStealthDetection: ComputeAndGetAlienScore(AActor* TargetPlayer, AActor* ForAlien) → float — triggers D_total computation for ForAlien, updates GlobalDetectionLevel; GetDetectionScore(AActor* TargetActor) → float (GlobalDetectionLevel, read-only, no computation); GetCurrentDetectionState() → EStealthState; IsPlayerUnderThreat() → bool (GlobalDetectionLevel ≥ 75). All callers access via IStealthDetection — no direct cast to UStealthSubsystem."
+    write_access: UStealthSubsystem-only (GlobalDetectionLevel and EStealthState updated only inside ComputeAndGetAlienScore(); no external detection score write path)
+    referenced_by:
+      - docs/architecture/adr-0017-stealth-system-architecture.md
+    added: "2026-05-26"
+    revised: ""
+
+  - state: imc_stealth_lifecycle
+    status: active
+    owner_system: UStealthComponent
+    adr: docs/architecture/adr-0017-stealth-system-architecture.md
+    interface: "GetCurrentDetectionLevel() → float (thin pass-through to UStealthSubsystem); GetCurrentDetectionState() → EStealthState (thin pass-through). Internal: HandleDetectionStateChanged(EStealthState Old, EStealthState New) bound to UStealthSubsystem::OnDetectionStateChanged; HandleMovementStateChanged(EHostileMovementState) bound to UHostileMovementComponent::OnMovementStateChanged. IMC ops routed via AHostileWorldPlayerController::PushIMC()/PopIMC() — never EIUS directly."
+    write_access: UStealthComponent-only (bIMCStealthActive, bCrouchTriggerActive, bDetectionTriggerActive, IMCPopCooldownHandle updated only inside the component's own event handlers; no external write path)
+    referenced_by:
+      - docs/architecture/adr-0017-stealth-system-architecture.md
+      - docs/architecture/adr-0018-player-controller-architecture.md
+    added: "2026-05-26"
+    revised: ""
+
 # ─── INTERFACE CONTRACTS ──────────────────────────────────────────────────────
 
 interfaces:
@@ -114,7 +148,7 @@ interfaces:
   - contract: noise_emitted_event
     status: active
     pattern: dynamic_multicast_delegate
-    description: "UHostileMovementComponent fires OnNoiseEmitted(float RadiusMeters) and calls UAIPerceptionSystem::MakeNoise() simultaneously. RadiusMeters = clamp((N_base × M_surface + N_exhaust) × 1.5, 0, 200). AI hearing percept handled natively by engine; OnNoiseEmitted is for non-AI consumers only."
+    description: "UHostileMovementComponent fires OnNoiseEmitted(float RadiusMeters) and calls UAISense_Hearing::ReportNoiseEvent() simultaneously. RadiusMeters = clamp((N_base × M_surface + N_exhaust) × 1.5, 0, 200). AI hearing percept handled natively by engine; OnNoiseEmitted is for non-AI consumers only."
     producer: UHostileMovementComponent (computed each tick when noise > 0)
     consumers:
       - Alien AI System (via UAIPerceptionSystem::MakeNoise — engine-native hearing percept)
@@ -210,6 +244,124 @@ interfaces:
     added: "2026-05-20"
     revised: ""
 
+  - contract: health_changed_event
+    status: active
+    pattern: dynamic_multicast_delegate
+    description: "UHealthComponent fires OnHealthChanged(int32 PreviousHP, int32 NewHP, EDamageType DamageType) after every damage application and healed restoration. Step 5 of the 5-step damage pipeline. Consumers bind via AddDynamic() in BeginPlay(); RemoveDynamic() in EndPlay()."
+    producer: UHealthComponent (fired in ApplyDamage() step 5 and CompleteHealing())
+    consumers:
+      - HUD System (health bar update, damage direction indicator, vignette opacity)
+      - Audio System (breathing state machine, impact audio, death gasp trigger)
+      - Animation System (injury state-driven locomotion blend trigger)
+    adr: docs/architecture/adr-0015-health-system-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0015-health-system-architecture.md
+    added: "2026-05-24"
+    revised: ""
+
+  - contract: injury_state_changed_event
+    status: active
+    pattern: dynamic_multicast_delegate
+    description: "UHealthComponent fires OnInjuryStateChanged(EInjuryState NewState) when HP crosses a threshold (51/26/11/1/0) or is restored above one. Transitions are immediate — no blend delay. Consumers use this to apply mechanical consequences."
+    producer: UHealthComponent (fired in ApplyInjuryStateChange() synchronously with HP change)
+    consumers:
+      - UHostileMovementComponent (SetInjurySpeedMultiplier: 1.0/1.0/0.9/0.8 per state; SetDodgeRecoveryPenalty: +0.1s at NearDeath)
+      - Animation System (injury locomotion blend, death montage trigger at Dead state)
+      - Audio System (breathing escalation per injury state)
+      - UStealthSubsystem (updates CachedInjuryNoisePenalty: 0/+5/+10/+15 per state; added to player noise in D_noise)
+    adr: docs/architecture/adr-0015-health-system-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0015-health-system-architecture.md
+      - docs/architecture/adr-0017-stealth-system-architecture.md
+    added: "2026-05-24"
+    revised: "2026-05-26"
+
+  - contract: detection_state_changed_event
+    status: active
+    pattern: dynamic_multicast_delegate
+    description: "UStealthSubsystem fires OnDetectionStateChanged(EStealthState OldState, EStealthState NewState) on every EStealthState transition. Consumers bind via AddDynamic() in BeginPlay() / Initialize(); RemoveDynamic() in EndPlay() / Deinitialize()."
+    producer: UStealthSubsystem (fired in ComputeAndGetAlienScore() after state machine evaluation)
+    consumers:
+      - UStealthComponent (IMC_Stealth push/pop management)
+      - UHUDSubsystem (stealth state label and meter update)
+      - UCombatSubsystem (OnStealthBroken gate — subscribes to state == Detected)
+      - Audio System (tension music layer crossfade)
+    adr: docs/architecture/adr-0017-stealth-system-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0017-stealth-system-architecture.md
+    added: "2026-05-26"
+    revised: ""
+
+  - contract: detection_level_changed_event
+    status: active
+    pattern: dynamic_multicast_delegate
+    description: "UStealthSubsystem fires OnDetectionLevelChanged(float NewGlobalLevel) whenever GlobalDetectionLevel changes. Fired after every ComputeAndGetAlienScore() call that changes the max. UHUDSubsystem uses this to update the per-frame detection bar without subscribing to state transitions."
+    producer: UStealthSubsystem (fired in ComputeAndGetAlienScore() when GlobalDetectionLevel changes)
+    consumers:
+      - UHUDSubsystem (detection bar color and value update — Tactical HUD mode)
+    adr: docs/architecture/adr-0017-stealth-system-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0017-stealth-system-architecture.md
+    added: "2026-05-26"
+    revised: ""
+
+  - contract: stealth_broken_event
+    status: active
+    pattern: dynamic_multicast_delegate
+    description: "UStealthSubsystem fires OnStealthBroken() exactly once when GlobalDetectionLevel first reaches 100. Does not re-fire on subsequent frames while GlobalDetectionLevel remains 100. Rearms when GlobalDetectionLevel drops below 100 (de-escalation). UCombatSubsystem uses this as the combat entry trigger from the stealth pathway."
+    producer: UStealthSubsystem (fired in ComputeAndGetAlienScore() on first crossing of GlobalDetectionLevel = 100)
+    consumers:
+      - UCombatSubsystem (NotifyCombatTrigger(ECombatTriggerSource::StealthBroken))
+      - Audio System (combat music fade-in trigger)
+    adr: docs/architecture/adr-0017-stealth-system-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0017-stealth-system-architecture.md
+      - docs/architecture/adr-0014-combat-system-architecture.md
+    added: "2026-05-26"
+    revised: ""
+
+  - contract: gsm_level_ready_event
+    status: active
+    pattern: dynamic_multicast_delegate
+    description: "UHostileWorldGSM fires OnLevelReady(UWorld* World) after all UWorldSubsystem::Initialize() calls complete and AGameModeBase::StartPlay() returns. Re-broadcast of FWorldDelegates::OnWorldBeginPlay filtered to EWorldType::Game. Safe binding point for any Session-tier subscriber that needs to attach to World-tier subsystems. Added per ADR-0002 World Lifecycle Hooks supplement (2026-05-26)."
+    producer: UHostileWorldGSM (HandleWorldBeginPlay → broadcast after EWorldType::Game filter)
+    consumers:
+      - UHUDSubsystem (BindWorldSystems() — attach to UCombatSubsystem, UStealthSubsystem, UInfectionSpreadSubsystem delegates for current world)
+    adr: docs/architecture/adr-0002-game-state-machine-implementation.md
+    referenced_by:
+      - docs/architecture/adr-0002-game-state-machine-implementation.md
+      - docs/architecture/adr-0016-hud-system-architecture.md
+    added: "2026-05-26"
+    revised: ""
+
+  - contract: gsm_world_tear_down_event
+    status: active
+    pattern: dynamic_multicast_delegate
+    description: "UHostileWorldGSM fires OnWorldTearDown(UWorld* World) before any UWorldSubsystem::Deinitialize() executes for the outgoing world. Re-broadcast of FWorldDelegates::OnPreWorldFinishDestroy filtered to EWorldType::Game. Last safe point to unbind delegates from World-tier producers before they are destroyed. Added per ADR-0002 World Lifecycle Hooks supplement (2026-05-26)."
+    producer: UHostileWorldGSM (HandlePreWorldFinishDestroy → broadcast after EWorldType::Game filter)
+    consumers:
+      - UHUDSubsystem (UnbindWorldSystems() — detach from all World-tier subsystem delegates before destruction)
+    adr: docs/architecture/adr-0002-game-state-machine-implementation.md
+    referenced_by:
+      - docs/architecture/adr-0002-game-state-machine-implementation.md
+      - docs/architecture/adr-0016-hud-system-architecture.md
+    added: "2026-05-26"
+    revised: ""
+
+  - contract: alien_perception_data_interface
+    status: active
+    pattern: uinterface_data_accessor
+    description: "IAlienPerceptionData — UINTERFACE implemented by AAlienCharacter, providing alien-specific perception parameters to UStealthSubsystem. Backed by FAlienStatRow (UDataTable, ADR-0012). Three read-only accessors: GetHearingSensitivity() → float (P_hearing 0.5–2.0); GetVisionAcuity() → float (P_vision 0.5–2.0); GetEyeLocation() → FVector (LOS trace origin / eye socket). UStealthSubsystem casts AAlienCharacter* to IAlienPerceptionData inside ComputeAndGetAlienScore(); test doubles may implement the interface for isolated stealth unit tests. Minor ADR-0012 implementation supplement — no ADR-0012 revision required."
+    producer: AAlienCharacter (implements IAlienPerceptionData; values resolved from FAlienStatRow at spawn)
+    consumers:
+      - UStealthSubsystem (ComputeAndGetAlienScore reads all three accessors per call)
+    adr: docs/architecture/adr-0017-stealth-system-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0017-stealth-system-architecture.md
+      - docs/architecture/adr-0012-alien-ai-system.md
+    added: "2026-05-26"
+    revised: ""
+
 # ─── PERFORMANCE BUDGETS ──────────────────────────────────────────────────────
 
 performance_budgets:
@@ -225,6 +377,20 @@ performance_budgets:
     referenced_by:
       - docs/architecture/adr-0012-alien-ai-system.md
     added: "2026-05-20"
+    revised: ""
+
+  - system: stealth_detection
+    status: active
+    budget_ms_per_alien: 0.1
+    budget_ms_total: 4.0
+    alien_count: 20
+    target_fps: 60
+    platform: PC
+    breakdown: "ComputeAndGetAlienScore() per call: 1 LOS line trace + arithmetic ≤0.1ms. At 20 aliens × 2Hz BT interval = 40 calls/sec = ≤4ms/sec total = ≤0.067ms/frame amortized. 4Hz terrain SphereOverlap: negligible."
+    adr: docs/architecture/adr-0017-stealth-system-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0017-stealth-system-architecture.md
+    added: "2026-05-26"
     revised: ""
 
 # ─── API DECISIONS ───────────────────────────────────────────────────────────
@@ -255,16 +421,17 @@ api_decisions:
 
   - purpose: subsystem_world_tier
     status: active
-    api: "UWorldSubsystem — UInfectionSpreadSubsystem, UAlienSquadSubsystem, UInvestigationSubsystem, UDialogueSubsystem, UCombatSubsystem"
+    api: "UWorldSubsystem — UInfectionSpreadSubsystem, UAlienSquadSubsystem, UInvestigationSubsystem, UDialogueSubsystem, UCombatSubsystem, UStealthSubsystem"
     not: "UGameInstanceSubsystem for state that must reset on level transition"
     adr: docs/architecture/adr-0004-subsystem-module-architecture.md
-    reason: "World-tier systems hold per-level state. UWorldSubsystem is auto-destroyed on level transition; Deinitialize() fires before world teardown. UInfectionSpreadSubsystem added by ADR-0013; UCombatSubsystem added by ADR-0014 (combat state resets on zone transition per GDD edge case)."
+    reason: "World-tier systems hold per-level state. UWorldSubsystem is auto-destroyed on level transition; Deinitialize() fires before world teardown. UInfectionSpreadSubsystem added by ADR-0013; UCombatSubsystem added by ADR-0014 (combat state resets on zone transition per GDD edge case); UStealthSubsystem added by ADR-0017 (per-alien detection scores are per-level state)."
     referenced_by:
       - docs/architecture/adr-0004-subsystem-module-architecture.md
       - docs/architecture/adr-0013-infection-spread-architecture.md
       - docs/architecture/adr-0014-combat-system-architecture.md
+      - docs/architecture/adr-0017-stealth-system-architecture.md
     added: "2026-05-19"
-    revised: "2026-05-21"
+    revised: "2026-05-26"
 
   - purpose: subsystem_player_tier
     status: active
@@ -285,7 +452,31 @@ api_decisions:
     reason: "Per-actor behaviour lives and dies with the owning AActor. Subsystems are for shared/coordination state, not per-instance behaviour."
     referenced_by:
       - docs/architecture/adr-0004-subsystem-module-architecture.md
+      - docs/architecture/adr-0017-stealth-system-architecture.md
     added: "2026-05-19"
+    revised: ""
+
+  - purpose: stealth_system_pattern
+    status: active
+    api: "UStealthComponent : UActorComponent (per-actor on AHostileCharacter — IMC_Stealth management, thin detection accessors) + UStealthSubsystem : UWorldSubsystem (implements IStealthDetection — D_total computation, GlobalDetectionLevel, EStealthState machine, de-escalation timers, event-cached player state)"
+    not: "UStealthComponent-only with no coordinator subsystem; BT Service computing D_total (computation authority belongs to UStealthSubsystem); direct cast to UStealthSubsystem from alien BT nodes (use IStealthDetection interface)"
+    adr: docs/architecture/adr-0017-stealth-system-architecture.md
+    reason: "Per ADR-0004: per-actor behavior (IMC_Stealth) lives in UActorComponent; coordination state (global detection level, state machine) lives in UWorldSubsystem. Mirrors UCombatComponent + UCombatSubsystem split (ADR-0014). ADR-0012 mandates Stealth System as source of truth for D_total — computation must live in the subsystem, not BT services."
+    referenced_by:
+      - docs/architecture/adr-0017-stealth-system-architecture.md
+    added: "2026-05-26"
+    revised: ""
+
+  - purpose: istealth_detection_interface
+    status: active
+    api: "IStealthDetection — ComputeAndGetAlienScore(AActor* TargetPlayer, AActor* ForAlien) → float (triggers D_total computation, updates cache); GetDetectionScore(AActor* TargetActor) → float (read-only GlobalDetectionLevel); GetCurrentDetectionState() → EStealthState; IsPlayerUnderThreat() → bool (level ≥ 75)"
+    not: "Direct call to UStealthSubsystem methods (always cast to IStealthDetection); BT Service computing D_total itself and pushing scores; polling GetDetectionScore() in Tick()"
+    adr: docs/architecture/adr-0017-stealth-system-architecture.md
+    reason: "IStealthDetection is the stable API surface established by ADR-0012 and extended by ADR-0017. ComputeAndGetAlienScore() added to provide BT Service the computation-triggering entry point while keeping the formula logic in the subsystem. Stable interface allows test doubles."
+    referenced_by:
+      - docs/architecture/adr-0012-alien-ai-system.md
+      - docs/architecture/adr-0017-stealth-system-architecture.md
+    added: "2026-05-26"
     revised: ""
 
   - purpose: primary_game_module
@@ -323,10 +514,10 @@ api_decisions:
 
   - purpose: noise_emission_api
     status: active
-    api: "UAIPerceptionSystem::MakeNoise(Instigator, Loudness, NoiseInstigator, Location) OR FAINoiseEvent + UAIPerceptionSystem::ReportEvent()"
-    not: "UAIPerceptionSystem::ReportNoise() (does not exist); UAIPerceptionComponent::ReportNoise() (does not exist); manual per-alien noise delivery"
+    api: "UAISense_Hearing::ReportNoiseEvent(WorldCtx, NoiseLocation, Loudness, Instigator, MaxRange, Tag)"
+    not: "UAIPerceptionSystem::MakeNoise() (does not exist in UE 5.7 — confirmed engine specialist 2026-05-21); UAIPerceptionSystem::ReportNoise() (does not exist); UAIPerceptionComponent::ReportNoise() (does not exist); manual per-alien noise delivery"
     adr: docs/architecture/adr-0010-movement-architecture.md
-    reason: "MakeNoise() is the stable static helper (UE4+) that internally constructs FAINoiseEvent and dispatches to all registered UAISenseConfig_Hearing listeners. ReportNoise() does not exist on either class — confirmed by engine specialist review."
+    reason: "UAISense_Hearing::ReportNoiseEvent() is the correct UE 5.7 static call — delivers FAINoiseEvent to all registered UAISenseConfig_Hearing listeners within MaxRange. UAIPerceptionSystem::MakeNoise() does not exist in UE 5.7 (pre-UE5 documentation error). Fallback: construct FAINoiseEvent manually and call UAIPerceptionSystem::ReportEvent() for full parameter control."
     referenced_by:
       - docs/architecture/adr-0010-movement-architecture.md
     added: "2026-05-20"
@@ -375,6 +566,26 @@ api_decisions:
     referenced_by:
       - docs/architecture/adr-0013-infection-spread-architecture.md
     added: "2026-05-20"
+
+  - purpose: health_component_pattern
+    status: active
+    api: "UHealthComponent : UActorComponent (per-actor on AHostileCharacter) — single class owns HP pool, damage pipeline, injury state machine, healing FSM, fall damage processing, i-frame gating, and death sequence initiation"
+    not: "AHostileCharacter owning HP directly (God Class); UHealthComponent + companion UHealthSubsystem (no cross-actor coordination needed); Inventory System owning healing logic"
+    adr: docs/architecture/adr-0015-health-system-architecture.md
+    reason: "Health is purely per-player with no cross-actor coordination state. Single component is sufficient — unlike UCombatSubsystem which coordinates across alien actors. Per ADR-0004 per_actor_state stance, UHealthComponent placement as UActorComponent is locked."
+    referenced_by:
+      - docs/architecture/adr-0015-health-system-architecture.md
+    added: "2026-05-24"
+
+  - purpose: fall_damage_velocity_capture
+    status: active
+    api: "UHostileMovementComponent::ProcessLanded() override — stores LandingImpactSpeed = Abs(Velocity.Z) BEFORE calling Super::ProcessLanded(). AHostileCharacter::Landed() reads MovComp->LandingImpactSpeed and calls HealthComp->ProcessFallDamage()."
+    not: "Reading Velocity.Z inside AHostileCharacter::Landed() directly (velocity may be zeroed by Super before Landed fires); per-tick velocity polling in Tick(); caching velocity in AHostileCharacter::Tick()"
+    adr: docs/architecture/adr-0015-health-system-architecture.md
+    reason: "UCharacterMovementComponent::ProcessLanded() calls ACharacter::Landed() before zeroing the vertical velocity. The override captures Velocity.Z at the correct moment. Reading velocity inside Landed() directly risks reading zero if Super has already modified it — the CMC subclass capture-before-super pattern is the only safe path."
+    referenced_by:
+      - docs/architecture/adr-0015-health-system-architecture.md
+    added: "2026-05-24"
     revised: ""
 
 # ─── FORBIDDEN PATTERNS ──────────────────────────────────────────────────────
@@ -445,3 +656,45 @@ forbidden_patterns:
     why: "Direct type cast couples callers to the concrete implementation class, breaking testability and the interface contract established by ADR-0013. IInfectionSpreadInterface is the stable API surface — the concrete class is an implementation detail."
     adr: docs/architecture/adr-0013-infection-spread-architecture.md
     added: "2026-05-20"
+
+  - pattern: polling_stealth_state_in_tick
+    status: active
+    description: "No system may call IStealthDetection::GetDetectionScore(), UStealthSubsystem::GetGlobalDetectionLevel(), or UStealthSubsystem::IsPlayerUnderThreat() in a per-frame Tick() method. Subscribe to OnDetectionStateChanged or OnDetectionLevelChanged delegates instead."
+    why: "Calling detection accessors in Tick() violates ADR-0001 polling_state_in_tick forbidden pattern. Detection level changes at BT Service intervals (0.5s), not per-frame. Polling in Tick() produces 60 redundant calls per second for zero additional information. Use event delegates for reactivity."
+    adr: docs/architecture/adr-0017-stealth-system-architecture.md
+    added: "2026-05-26"
+
+  - pattern: stealth_imc_combat_push
+    status: active
+    description: "UStealthSubsystem and UStealthComponent must never push IMC_Combat. Stealth reaching detection level 100 fires OnStealthBroken() — UCombatSubsystem owns the IMC_Combat push in response. Stealth owns IMC_Stealth only."
+    why: "ADR-0014 assigns IMC_Combat ownership exclusively to UCombatSubsystem. ADR-0003 requires a single owner per IMC layer to prevent double-push and orphaned pop sequences. Stealth System fires the event; Combat System decides whether and when to push IMC_Combat."
+    adr: docs/architecture/adr-0017-stealth-system-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0014-combat-system-architecture.md
+    added: "2026-05-26"
+
+  - pattern: world_tier_bind_in_session_initialize
+    status: active
+    description: "A UGameInstanceSubsystem (Session-tier) must not bind to delegates on a UWorldSubsystem (World-tier) from within its Initialize() method. Initialize() runs before any UWorld exists in many scenarios (cold start, level travel). Bind inside the OnLevelReady handler (see ADR-0002 World Lifecycle Hooks supplement)."
+    why: "World-tier subsystems do not exist until after UWorld::BeginPlay completes. Calling GetWorld()->GetSubsystem<T>() in Session-tier Initialize() returns null in the common case, silently producing dead subscriptions. The OnLevelReady delegate exists specifically to provide the correct binding point."
+    adr: docs/architecture/adr-0002-game-state-machine-implementation.md
+    referenced_by:
+      - docs/architecture/adr-0002-game-state-machine-implementation.md
+      - docs/architecture/adr-0016-hud-system-architecture.md
+    added: "2026-05-26"
+
+  - pattern: cached_uworld_pointer_across_levels
+    status: active
+    description: "Systems subscribed to UHostileWorldGSM::OnLevelReady must not cache the UWorld* parameter as a member variable for use after subsequent level transitions. The pointer becomes invalid the moment OnWorldTearDown fires. Use the UWorld* parameter passed to each broadcast, or call GetWorld() inside the handler."
+    why: "UWorld is destroyed on every level transition. A cached pointer becomes a dangling reference. Re-querying via GetWorld() or using the broadcast parameter ensures the pointer is always live."
+    adr: docs/architecture/adr-0002-game-state-machine-implementation.md
+    referenced_by:
+      - docs/architecture/adr-0002-game-state-machine-implementation.md
+    added: "2026-05-26"
+
+  - pattern: direct_stealth_component_access_from_alien
+    status: active
+    description: "Alien BT nodes (UBTService, UBTTask, UBTDecorator) must not acquire a reference to UStealthComponent on the player character and call methods directly. All alien stealth interaction is via IStealthDetection on UStealthSubsystem: World->GetSubsystem<UStealthSubsystem>() → Cast<IStealthDetection>."
+    why: "UStealthComponent is a per-player actor component. Direct alien → player component coupling requires alien code to hold a TWeakObjectPtr<AHostileCharacter>, creating tight actor coupling across AI and player systems. UStealthSubsystem provides the decoupled interface and is always accessible via world context."
+    adr: docs/architecture/adr-0017-stealth-system-architecture.md
+    added: "2026-05-26"

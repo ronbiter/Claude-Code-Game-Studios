@@ -33,7 +33,7 @@ The Infection Spread System requires a continuous world-simulation subsystem tha
 
 ### Constraints
 - Must be `UWorldSubsystem` — infection state must not persist into the Mountain Prison level (separate world via `OpenLevel()`). GDD Rule 8 is explicit.
-- Must call `USceneManagementSubsystem::RequestDataLayerSwap()` exclusively — no direct `UDataLayerSubsystem` calls (ADR-0008 forbidden pattern `direct_data_layer_write`).
+- Must call `USceneManagementSubsystem::RequestDataLayerSwap()` exclusively — no direct `UDataLayerManager` calls (ADR-0008 forbidden pattern `direct_data_layer_write`). Note: `UDataLayerSubsystem` does not exist in UE 5.7; correct class is `UDataLayerManager` via `GetWorld()->GetDataLayerManager()`.
 - Must implement `IHostileSaveProvider` and call `RegisterProvider()` in `Initialize()` after `Collection.InitializeDependency<USaveLoadSubsystem>()` (ADR-0006; ADR-0004 `initialize_peer_caching` forbidden pattern).
 - Must use `DECLARE_DYNAMIC_MULTICAST_DELEGATE` for `OnCellStateChanged` (ADR-0001).
 - Must use pooled actors with `UNavModifierComponent` for NavMesh path blocking in Partial+ cells (ADR-0012 pattern).

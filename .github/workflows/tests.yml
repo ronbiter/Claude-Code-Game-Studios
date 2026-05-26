@@ -1,0 +1,37 @@
+name: Automated Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Run UE Automation Tests
+    # UE requires a self-hosted runner with Unreal Editor installed.
+    # Set UE_EDITOR_PATH on the runner before first use.
+    # Example: UE_EDITOR_PATH="C:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor.exe"
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Run Automation Tests
+        # Replace [ProjectName] with the actual .uproject name when the UE project is initialized.
+        run: |
+          & "$env:UE_EDITOR_PATH" "${{ github.workspace }}/[ProjectName].uproject" `
+            -nullrhi -nosound `
+            -ExecCmds="Automation RunTests MyGame.; Quit" `
+            -log -unattended
+        shell: pwsh
+
+      - name: Upload Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs
+          path: Saved/Logs/

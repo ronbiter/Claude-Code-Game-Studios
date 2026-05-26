@@ -24,8 +24,11 @@
 #
 # STATUS VALUES: active | deprecated | superseded-by: TR-[system]-NNN
 
-version: 3
-last_updated: "2026-05-21"
+version: 4
+last_updated: "2026-05-26"
+# v4 (2026-05-26): /architecture-review confirms all 207 existing TRs remain accurate.
+# No new TR-IDs added (ADR-0014/0015/0016/0017/0018 cover existing TRs).
+# C5 doc residue cleaned (DismissedHintIDs removed from ADR-0006:545 + traceability:308).
 
 requirements:
 

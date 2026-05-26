@@ -4,7 +4,7 @@
 Proposed
 
 ## Date
-2026-05-19
+2026-05-21 (C1 alignment — schema complete, triggers/load-sequence corrected)
 
 ## Engine Compatibility
 
@@ -38,6 +38,7 @@ Proposed
 - Save must not block the game thread (survival games have open-world checkpoint zones; a synchronous save would hitch at the worst moment)
 - Subsystems are peer-initialized in undefined order (ADR-0004 lazy-access rule); the save aggregation pattern must tolerate this
 - Knowledge risk is HIGH — `AsyncSaveGameToSlot` signature must be verified against UE 5.7 before implementation
+- **Excluded from save slot: input bindings.** Per C4 resolution (2026-05-26), runtime key rebindings are owned exclusively by ADR-0003 and persisted via `UEnhancedInputUserSettings::SaveSettings()` to its own profile-scoped file. They are **not** mirrored into `USaveGame` — bindings apply across all save slots and new-game sessions, so per-slot storage would force re-binding after every new game.
 
 ### Requirements
 - Must support single autosave slot with no player slot-management UI
@@ -57,26 +58,56 @@ Proposed
 
 ### Save Data Schema
 
+All 11 GDD Rule 3 domains are represented. Each provider owns exactly one sub-struct in the root save object. Adding a new provider = add one USTRUCT + one UPROPERTY. Nothing else changes.
+
 ```cpp
-// Each provider owns one named sub-struct inside the root save object.
-// Adding a new provider = add one USTRUCT + one UPROPERTY here. Nothing else changes.
-
+// ── Player Transform ──────────────────────────────────────────────────────────
 USTRUCT(BlueprintType)
-struct FTutorialSaveData
+struct FPlayerTransformSaveData
 {
     GENERATED_BODY()
-    UPROPERTY() TSet<FName> CompletedHintIDs;
-    UPROPERTY() TSet<FName> DismissedHintIDs;
+    UPROPERTY() FVector Location;
+    UPROPERTY() float   Yaw;    // Pitch/Roll are cosmetic and not restored
 };
 
+// ── Health ────────────────────────────────────────────────────────────────────
 USTRUCT(BlueprintType)
-struct FQuestSaveData
+struct FHealthSaveData
 {
     GENERATED_BODY()
-    UPROPERTY() TMap<FName, EQuestStatus> QuestStates;
-    UPROPERTY() TArray<FName> ActiveObjectiveIDs;
+    UPROPERTY() float         CurrentHP;
+    UPROPERTY() float         MaxHP;
+    UPROPERTY() TArray<FName> ActiveStatusEffectIDs; // FName refs to data-table rows
 };
 
+// ── Inventory ─────────────────────────────────────────────────────────────────
+USTRUCT(BlueprintType)
+struct FInventorySaveData
+{
+    GENERATED_BODY()
+    UPROPERTY() TArray<FInventoryItemEntry> Items; // FInventoryItemEntry: FName ItemID + int32 Count
+};
+
+// ── Crafting ──────────────────────────────────────────────────────────────────
+USTRUCT(BlueprintType)
+struct FCraftingSaveData
+{
+    GENERATED_BODY()
+    UPROPERTY() TSet<FName> UnlockedSchematicIDs;
+};
+
+// ── Infection Spread ──────────────────────────────────────────────────────────
+USTRUCT(BlueprintType)
+struct FInfectionSaveData
+{
+    GENERATED_BODY()
+    UPROPERTY() float              GlobalSpreadPercentage;
+    UPROPERTY() TMap<FName, float> ZoneSpreadOverrides;  // ZoneID → local %
+    // TODO-C6: active spread vectors (direction + source zone) deferred pending
+    //   C6 resolution (ADR-0004 Session-tier vs ADR-0013 World-tier infection conflict).
+};
+
+// ── Faction Reputation ────────────────────────────────────────────────────────
 USTRUCT(BlueprintType)
 struct FFactionSaveData
 {
@@ -84,35 +115,96 @@ struct FFactionSaveData
     UPROPERTY() TMap<FName, int32> FactionStandings; // FactionID → reputation points
 };
 
+// ── Investigation ─────────────────────────────────────────────────────────────
 USTRUCT(BlueprintType)
-struct FInventorySaveData
+struct FInvestigationSaveData
 {
     GENERATED_BODY()
-    UPROPERTY() TArray<FInventoryItemEntry> Items;
+    UPROPERTY() TSet<FName>   CompletedClueIDs;
+    UPROPERTY() TArray<FName> ActiveObjectiveIDs;
+};
+
+// ── World Flags ───────────────────────────────────────────────────────────────
+USTRUCT(BlueprintType)
+struct FActorInteractionFlag
+{
+    GENERATED_BODY()
+    UPROPERTY() FGuid  ActorGUID;    // stable GUID assigned to each flagged world actor
+    UPROPERTY() uint8  FlagBitfield; // bit 0=looted, 1=opened, 2=collected, 3=destroyed
 };
 
 USTRUCT(BlueprintType)
-struct FInfectionSaveData
+struct FWorldFlagsSaveData
 {
     GENERATED_BODY()
-    UPROPERTY() float GlobalSpreadPercentage;
-    UPROPERTY() TMap<FName, float> ZoneSpreadOverrides; // ZoneID → local %
+    UPROPERTY() TArray<FActorInteractionFlag> ActorFlags;
 };
 
-// Root save object — one per save slot.
+// ── Map System ────────────────────────────────────────────────────────────────
+USTRUCT(BlueprintType)
+struct FHostileMapMarker
+{
+    GENERATED_BODY()
+    UPROPERTY() FVector  Location;
+    UPROPERTY() FString  Label;
+};
+
+USTRUCT(BlueprintType)
+struct FMapSaveData
+{
+    GENERATED_BODY()
+    UPROPERTY() TMap<FName, uint8>           ZoneFogBitmask;       // ZoneID → revealed bitmask
+    UPROPERTY() TArray<FName>                AutoPinnedLocationIDs;
+    UPROPERTY() TArray<FHostileMapMarker>    ManualMarkers;
+};
+
+// ── Tutorial ──────────────────────────────────────────────────────────────────
+USTRUCT(BlueprintType)
+struct FTutorialSaveData
+{
+    GENERATED_BODY()
+    UPROPERTY() TSet<FName> CompletedHintIDs;
+    // DismissedHintIDs removed — DISMISSED state deleted in Tutorial GDD Rule 5 (C5 fix)
+};
+
+// ── Game State Machine ────────────────────────────────────────────────────────
+USTRUCT(BlueprintType)
+struct FGSMSaveData
+{
+    GENERATED_BODY()
+    UPROPERTY() FName LastValidState = FName("Playing"); // always Playing or Paused at save time
+};
+
+// ── Quest ─────────────────────────────────────────────────────────────────────
+USTRUCT(BlueprintType)
+struct FQuestSaveData
+{
+    GENERATED_BODY()
+    UPROPERTY() TMap<FName, EQuestStatus> QuestStates;
+    UPROPERTY() TArray<FName>             ActiveObjectiveIDs;
+};
+
+// ── Root save object — one per slot ──────────────────────────────────────────
 UCLASS()
 class UHostileWorldSaveGame : public USaveGame
 {
     GENERATED_BODY()
 public:
-    UPROPERTY() FTutorialSaveData  TutorialData;
-    UPROPERTY() FQuestSaveData     QuestData;
-    UPROPERTY() FFactionSaveData   FactionData;
-    UPROPERTY() FInventorySaveData InventoryData;
-    UPROPERTY() FInfectionSaveData InfectionData;
+    UPROPERTY() FPlayerTransformSaveData  PlayerTransformData;
+    UPROPERTY() FHealthSaveData           HealthData;
+    UPROPERTY() FInventorySaveData        InventoryData;
+    UPROPERTY() FCraftingSaveData         CraftingData;
+    UPROPERTY() FInfectionSaveData        InfectionData;
+    UPROPERTY() FFactionSaveData          FactionData;
+    UPROPERTY() FInvestigationSaveData    InvestigationData;
+    UPROPERTY() FWorldFlagsSaveData       WorldFlagsData;
+    UPROPERTY() FMapSaveData              MapData;
+    UPROPERTY() FTutorialSaveData         TutorialData;
+    UPROPERTY() FGSMSaveData              GSMData;
+    UPROPERTY() FQuestSaveData            QuestData;
 
-    UPROPERTY() FString SaveVersion = TEXT("1.0");
-    UPROPERTY() FDateTime SaveTimestamp;
+    UPROPERTY() FString    SaveVersion = TEXT("1.0");
+    UPROPERTY() FDateTime  SaveTimestamp;
 };
 ```
 
@@ -163,44 +255,125 @@ class USaveLoadSubsystem : public UGameInstanceSubsystem
     GENERATED_BODY()
 public:
     void RegisterProvider(IHostileSaveProvider* Provider);
-    void TriggerAutosave();    // Called by checkpoint listener
-    void LoadSaveOnStartup();  // Called from GameInstance::Init() after all subsystems init
+    void TriggerAutosave();    // Async checkpoint/investigation saves; gated by CanSave()
+    void TriggerExitSave();    // Blocking synchronous save on clean exit only
 
 private:
     TArray<IHostileSaveProvider*> SaveProviders;
-    static constexpr TCHAR* SaveSlotName = TEXT("hostile_world_autosave");
-    static constexpr int32  SaveUserIndex = 0;
 
-    // Must be UFUNCTION — lambda captures are not GC-safe with async delegates
+    static constexpr const TCHAR* SaveSlotName            = TEXT("HostileWorldSave_Slot0");
+    static constexpr int32        SaveUserIndex            = 0;
+    static constexpr float        CheckpointCooldownSeconds = 30.0f;
+
+    UPROPERTY() bool  bSaveInProgress = false;
+    float             TimeSinceLastSave = TNumericLimits<float>::Max(); // allow first save immediately
+    EGameState        LastKnownGSMState = EGameState::Playing;
+
+    FGameplayMessageListenerHandle CheckpointHandle;
+    FGameplayMessageListenerHandle InvestigationHandle;
+    FDelegateHandle                ExitHandle;
+
+    bool CanSave() const;               // false in Cutscene/GameOver, in-progress, or within cooldown
+    void PopulateAndSave(bool bBlocking);
+    void NotifyHUDSaveStarted();
+    void NotifyHUDSaveComplete();
+
     UFUNCTION() void OnSaveComplete(const FString& SlotName, int32 UserIndex, bool bSuccess);
     UFUNCTION() void OnLoadComplete(const FString& SlotName, int32 UserIndex, USaveGame* SaveGame);
+    UFUNCTION() void OnGSMStateChanged(EGameState NewState, EGameState OldState);
 };
 ```
 
 ---
 
-### Save Trigger: Checkpoint → Gameplay Message Router
+### Save Triggers
 
-Checkpoint actors broadcast a global message when the player enters their volume. `USaveLoadSubsystem` listens and triggers the async save. This keeps `USaveLoadSubsystem` decoupled from checkpoint actor implementation.
+Three triggers activate `TriggerAutosave()` or `TriggerExitSave()`. All async saves pass through `CanSave()`; the exit save uses its own gate (Playing/Paused only).
 
 ```cpp
-// Checkpoint actor broadcasts this when player overlaps trigger volume
-USTRUCT()
-struct FCheckpointReachedMessage { GENERATED_BODY() };
+// Broadcast by ACheckpointActor on zone-boundary overlap
+USTRUCT() struct FCheckpointReachedMessage { GENERATED_BODY() };
+// Broadcast by UInvestigationSubsystem on key milestone completion
+USTRUCT() struct FInvestigationKeyEventMessage { GENERATED_BODY() };
 
-// USaveLoadSubsystem — registered in Initialize()
 void USaveLoadSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
     Super::Initialize(Collection);
-    CheckpointHandle = UGameplayMessageSubsystem::Get(this)
-        .RegisterListener<FCheckpointReachedMessage>(
-            TAG_Event_Checkpoint_Reached,
-            this, &USaveLoadSubsystem::OnCheckpointReached);
+    auto& Router = UGameplayMessageSubsystem::Get(this);
+
+    // TRIGGER 1 — zone boundary checkpoint
+    CheckpointHandle = Router.RegisterListener<FCheckpointReachedMessage>(
+        TAG_Event_Checkpoint_Reached, this, &USaveLoadSubsystem::OnCheckpointReached);
+
+    // TRIGGER 2 — investigation key event
+    InvestigationHandle = Router.RegisterListener<FInvestigationKeyEventMessage>(
+        TAG_Event_Investigation_KeyEvent, this, &USaveLoadSubsystem::OnInvestigationKeyEvent);
+
+    // GSM subscription: load sequence (Loading state) + save gate (Cutscene/GameOver)
+    Collection.InitializeDependency<UGameStateMachineSubsystem>();
+    GetGameInstance()->GetSubsystem<UGameStateMachineSubsystem>()
+        ->SubscribeToStateChange(
+            FStateChangeDelegate::CreateUObject(this, &USaveLoadSubsystem::OnGSMStateChanged));
+
+    // TRIGGER 3 — clean exit (bound to engine termination; fires TriggerExitSave blocking)
+    ExitHandle = FCoreDelegates::ApplicationWillTerminateDelegate.AddUObject(
+        this, &USaveLoadSubsystem::TriggerExitSave);
 }
 
 void USaveLoadSubsystem::OnCheckpointReached(FGameplayTag, const FCheckpointReachedMessage&)
 {
     TriggerAutosave();
+}
+
+void USaveLoadSubsystem::OnInvestigationKeyEvent(FGameplayTag, const FInvestigationKeyEventMessage&)
+{
+    TriggerAutosave();
+}
+
+// Gate enforces Cutscene/GameOver suppression (GDD Rule 2) and 30s cooldown (GDD tuning knob)
+bool USaveLoadSubsystem::CanSave() const
+{
+    return LastKnownGSMState != EGameState::Cutscene
+        && LastKnownGSMState != EGameState::GameOver
+        && !bSaveInProgress
+        && TimeSinceLastSave >= CheckpointCooldownSeconds;
+}
+
+void USaveLoadSubsystem::TriggerAutosave()
+{
+    if (CanSave()) PopulateAndSave(/*bBlocking=*/false);
+}
+
+void USaveLoadSubsystem::TriggerExitSave()
+{
+    // Only valid from Playing/Paused; GameOver/Cutscene exits do not save
+    if (LastKnownGSMState == EGameState::Playing || LastKnownGSMState == EGameState::Paused)
+        PopulateAndSave(/*bBlocking=*/true);
+}
+
+void USaveLoadSubsystem::PopulateAndSave(bool bBlocking)
+{
+    UHostileWorldSaveGame* SaveGame = NewObject<UHostileWorldSaveGame>(this);
+    SaveGame->SaveTimestamp = FDateTime::UtcNow();
+    for (IHostileSaveProvider* Provider : SaveProviders)
+        if (Provider) Provider->PopulateSaveData(*SaveGame);
+
+    bSaveInProgress    = true;
+    TimeSinceLastSave  = 0.0f;
+    NotifyHUDSaveStarted();  // → UHUDSubsystem::ShowSaveIndicator(2.0s)
+
+    if (bBlocking)
+    {
+        // Synchronous path — only on clean exit; intentional game-thread block
+        UGameplayStatics::SaveGameToSlot(SaveGame, SaveSlotName, SaveUserIndex);
+        bSaveInProgress = false;
+        NotifyHUDSaveComplete();
+    }
+    else
+    {
+        UGameplayStatics::AsyncSaveGameToSlot(SaveGame, SaveSlotName, SaveUserIndex,
+            FAsyncSaveGameToSlotDelegate::CreateUObject(this, &USaveLoadSubsystem::OnSaveComplete));
+    }
 }
 ```
 
@@ -209,22 +382,37 @@ void USaveLoadSubsystem::OnCheckpointReached(FGameplayTag, const FCheckpointReac
 ### Async Save/Load Flow
 
 ```
-SAVE:
-  FCheckpointReachedMessage broadcast
-    → USaveLoadSubsystem::TriggerAutosave()
-      → Create UHostileWorldSaveGame (or update cached instance)
-      → For each ISaveProvider: PopulateSaveData(SaveGame)
-      → AsyncSaveGameToSlot(SaveGame, SlotName, UserIndex, OnSaveComplete delegate)
-        → OnSaveComplete(bSuccess) — log warning on failure, no crash
+SAVE (async — checkpoint and investigation triggers):
+  FCheckpointReachedMessage or FInvestigationKeyEventMessage broadcast
+    → CanSave()? (Cutscene/GameOver blocked; cooldown checked; no in-progress save)
+      YES → PopulateAndSave(bBlocking=false)
+              → NewObject<UHostileWorldSaveGame>
+              → For each IHostileSaveProvider: PopulateSaveData(SaveGame)
+              → NotifyHUDSaveStarted() → UHUDSubsystem::ShowSaveIndicator(2.0s)
+              → AsyncSaveGameToSlot(SaveGame, "HostileWorldSave_Slot0", 0, OnSaveComplete)
+                  → OnSaveComplete(bSuccess): log warning on failure; NotifyHUDSaveComplete()
+      NO  → discard; no write
 
-LOAD (startup):
-  UGameInstance::Init()
-    → All UGameInstanceSubsystems initialize (order: USaveLoadSubsystem first via dependency)
-    → USaveLoadSubsystem::LoadSaveOnStartup()  [called from OnStart(), not Init() — see Risk below]
-      → AsyncLoadGameFromSlot(SlotName, UserIndex, FAsyncLoadGameFromSlotDelegate::CreateUObject(this, &USaveLoadSubsystem::OnLoadComplete))
-        → OnLoadComplete: if SaveGame != nullptr, for each ISaveProvider: LoadFromSaveData(SaveGame)
-        → if SaveGame == nullptr: no save file — providers use defaults (fresh game)
-      → Notify GameInstance that load is complete (transition to main menu)
+SAVE (blocking — clean exit only):
+  FCoreDelegates::ApplicationWillTerminateDelegate fires
+    → TriggerExitSave(): GSM in Playing or Paused?
+        YES → PopulateAndSave(bBlocking=true)
+                → SaveGameToSlot(SaveGame, "HostileWorldSave_Slot0", 0)  [synchronous]
+
+LOAD (GSM Loading state):
+  GSM transitions to Loading state
+    → OnGSMStateChanged(Loading) fires on USaveLoadSubsystem
+      → DoesSaveGameExist("HostileWorldSave_Slot0")?
+          YES → AsyncLoadGameFromSlot(..., OnLoadComplete)
+                    → OnLoadComplete(SaveGame):
+                        Cast<UHostileWorldSaveGame> succeeds?
+                          YES → for each IHostileSaveProvider: LoadFromSaveData(*HostileSave)
+                          NO  → DeleteGameInSlot(); LoadFromSaveData(fresh defaults);
+                                UHUDSubsystem::ShowNotification(
+                                  "Save data could not be loaded. Starting new game.", 5.0s)
+                        → GSM->OnLoadComplete()  [GSM transitions Loading → Playing]
+          NO  → for each IHostileSaveProvider: LoadFromSaveData(fresh defaults)
+                → GSM->OnLoadComplete()
 ```
 
 ---
@@ -234,31 +422,50 @@ LOAD (startup):
 ```
 UGameInstance
 └── USaveLoadSubsystem  (Session-tier, ADR-0004)
-      │  owns: UHostileWorldSaveGame* CachedSave
-      │  owns: TArray<IHostileSaveProvider*> SaveProviders
-      │  listens: TAG_Event_Checkpoint_Reached (Gameplay Message Router)
+      │  owns: UHostileWorldSaveGame (per-save, not cached between checkpoints)
+      │  owns: TArray<IHostileSaveProvider*> SaveProviders  (12 registered providers)
+      │  listens: TAG_Event_Checkpoint_Reached, TAG_Event_Investigation_KeyEvent
+      │  subscribes: UGameStateMachineSubsystem::OnStateChanged (gate + load trigger)
+      │  binds: FCoreDelegates::ApplicationWillTerminateDelegate (exit save)
       │
-      ├── UQuestSubsystem      implements IHostileSaveProvider → FQuestSaveData
-      ├── UFactionSubsystem    implements IHostileSaveProvider → FFactionSaveData
-      ├── UInventorySubsystem  implements IHostileSaveProvider → FInventorySaveData
-      ├── UInfectionSubsystem  implements IHostileSaveProvider → FInfectionSaveData
-      └── UTutorialSubsystem   implements IHostileSaveProvider → FTutorialSaveData
+      ├── UPlayerControllerSubsystem  → FPlayerTransformSaveData
+      ├── UHealthSubsystem            → FHealthSaveData
+      ├── UInventorySubsystem         → FInventorySaveData
+      ├── UCraftingSubsystem          → FCraftingSaveData
+      ├── UInfectionSubsystem         → FInfectionSaveData  (spread-vectors TODO-C6)
+      ├── UFactionSubsystem           → FFactionSaveData
+      ├── UInvestigationSubsystem     → FInvestigationSaveData
+      ├── UWorldFlagsSubsystem        → FWorldFlagsSaveData
+      ├── UMapSubsystem               → FMapSaveData
+      ├── UTutorialSubsystem          → FTutorialSaveData
+      ├── UGameStateMachineSubsystem  → FGSMSaveData
+      └── UQuestSubsystem             → FQuestSaveData
 
-ACheckpointActor (UWorld) — broadcasts FCheckpointReachedMessage
-  → USaveLoadSubsystem listens → TriggerAutosave()
-    → UGameplayStatics::AsyncSaveGameToSlot(UHostileWorldSaveGame, "hostile_world_autosave", 0, ...)
+SAVE TRIGGERS:
+  ACheckpointActor → FCheckpointReachedMessage → TriggerAutosave() [async]
+  UInvestigationSubsystem → FInvestigationKeyEventMessage → TriggerAutosave() [async]
+  FCoreDelegates::ApplicationWillTerminateDelegate → TriggerExitSave() [blocking]
+
+LOAD TRIGGER:
+  GSM state = Loading → OnGSMStateChanged() → AsyncLoadGameFromSlot(...)
+    → OnLoadComplete → all 12 providers LoadFromSaveData → GSM->OnLoadComplete()
 ```
 
 ### Key Interfaces
 
 | Interface / API | Owner | Consumers |
 |----------------|-------|-----------|
-| `IHostileSaveProvider` UInterface | `USaveLoadSubsystem` declares | All 5 contributing subsystems implement |
+| `IHostileSaveProvider` UInterface | `USaveLoadSubsystem` declares | All 12 contributing subsystems implement |
 | `RegisterProvider(IHostileSaveProvider*)` | `USaveLoadSubsystem` | Called by each provider in `Initialize()` |
-| `TriggerAutosave()` | `USaveLoadSubsystem` | Checkpoint listener (internal); exposed for testing |
-| `LoadSaveOnStartup()` | `USaveLoadSubsystem` | `UGameInstance::Init()` after subsystem init |
+| `TriggerAutosave()` | `USaveLoadSubsystem` | Checkpoint + investigation listeners (internal); exposed for testing |
+| `TriggerExitSave()` | `USaveLoadSubsystem` | `FCoreDelegates::ApplicationWillTerminateDelegate` — blocking sync write on clean exit |
 | `TAG_Event_Checkpoint_Reached` | `FCheckpointReachedMessage` | `ACheckpointActor` broadcasts; `USaveLoadSubsystem` listens |
-| `UHostileWorldSaveGame` | Save/Load subsystem | All providers read/write through subsystem methods — never directly |
+| `TAG_Event_Investigation_KeyEvent` | `FInvestigationKeyEventMessage` | `UInvestigationSubsystem` broadcasts on key milestone; `USaveLoadSubsystem` listens |
+| `OnGSMStateChanged(NewState, OldState)` | `USaveLoadSubsystem` | GSM subscription — triggers async load on `Loading`; gates saves on `Cutscene`/`GameOver` |
+| `GSM->OnLoadComplete()` | `UGameStateMachineSubsystem` | Called by `USaveLoadSubsystem` after all 12 providers restored → `Loading → Playing` |
+| `UHUDSubsystem::ShowSaveIndicator()` | `UHUDSubsystem` | Called by `USaveLoadSubsystem` on save start/complete |
+| `UHUDSubsystem::ShowNotification()` | `UHUDSubsystem` | Called by `USaveLoadSubsystem` on corruption or storage-full error |
+| `UHostileWorldSaveGame` | `USaveLoadSubsystem` | All 12 providers via `PopulateSaveData` / `LoadFromSaveData` only — never accessed directly |
 
 ## Alternatives Considered
 
@@ -307,17 +514,36 @@ ACheckpointActor (UWorld) — broadcasts FCheckpointReachedMessage
 - **Risk**: `USaveGame` UPROPERTY serialization silently drops data if a USTRUCT lacks `GENERATED_BODY()` or is not marked `UPROPERTY()`. **Mitigation**: All save sub-structs must include both; add a compile-time static assert in `UHostileWorldSaveGame` constructor verifying struct sizes are non-zero.
 - **Risk**: `IHostileSaveProvider*` raw pointer in `TArray<IHostileSaveProvider*>` may dangle if a provider is garbage-collected before save fires. **Mitigation**: Providers are `UGameInstanceSubsystem` instances — they live for the full session; GC cannot collect them while `GameInstance` is alive. No `TWeakInterfacePtr` needed at this scope. Add a defensive `IsValid()` guard before dispatch anyway.
 - **Risk**: Nested USTRUCT fields holding `UObject*` or `TObjectPtr<>` — these are silently dropped during `USaveGame` serialization. **Mitigation**: All save sub-structs (`FTutorialSaveData`, `FQuestSaveData`, etc.) must contain only primitive types, FString, FName, TArray, TMap, TSet of primitives/FName/FString. Zero `UObject*` members allowed in any save struct. Code review check required on every save struct addition. (Engine specialist finding.)
-- **Risk**: Load-before-play ordering — if `GameInstance::Init()` fires before all subsystems finish registering, `LoadFromSaveData` may be called on an unregistered provider. **Mitigation**: `LoadSaveOnStartup()` is deferred until all `Initialize()` calls complete (UE guarantees subsystem init before `Init()` returns). Document this invariant in `USaveLoadSubsystem.h`.
+- **Risk**: Load sequence timing — `OnGSMStateChanged(Loading)` fires when GSM enters the Loading state, which is after all session-tier subsystems have initialized. However, if a provider is World-tier (e.g., a future `UWorldSubsystem` for world flags), `LoadFromSaveData` would be called before the world is available. **Mitigation**: All 12 providers must be Session-tier `UGameInstanceSubsystem` — World-tier subsystems that need save data must proxy through a Session-tier cache. Verify provider tier before each new registration.
+- **Risk**: Blocking exit write platform limits — `UGameplayStatics::SaveGameToSlot()` (synchronous) may exceed the platform-allowed termination window on console or mobile. **Mitigation**: PC/Windows only at MVP; revisit for console certification. The synchronous path uses already-populated in-memory providers so no extra I/O aggregation is required — write time is bounded by disk speed only.
+- **Risk**: GSM subscription before `UGameStateMachineSubsystem::Initialize()` completes — `SubscribeToStateChange` must not fire before the GSM is ready. **Mitigation**: `Collection.InitializeDependency<UGameStateMachineSubsystem>()` guarantees GSM is initialized before the subscription call in `USaveLoadSubsystem::Initialize()`.
 - **Risk**: Fresh-game path (no save file) — `AsyncLoadGameFromSlot` returns nullptr. **Mitigation**: Explicit null check; providers use hardcoded defaults if `InSave == nullptr` (they should work correctly with a zero-initialized save struct).
 
 ## GDD Requirements Addressed
 
 | GDD System | Requirement | How This ADR Addresses It |
 |------------|-------------|--------------------------|
-| tutorial-system.md | TR-tutorial-006: Persist completed/dismissed HintIDs via Save/Load (`FTutorialProgress`); load skips trigger registration for terminal hints | `FTutorialSaveData` sub-struct in `UHostileWorldSaveGame`; `UTutorialSubsystem` implements `IHostileSaveProvider`; `LoadFromSaveData` restores completed/dismissed IDs before first level triggers register |
-| systems-index.md | Save/Load System (#6) depends on Game State Machine — must survive level transitions | `USaveLoadSubsystem` is Session-tier (ADR-0004); persists across level transitions; load fires from `GameInstance::Init()` before any level loads |
-
-*Note: Save/Load GDD (#6 in systems-index) has Status: Not Started. That GDD should be authored using this ADR as its architectural baseline. Its TR-save-XXX requirements will be backfilled into this table when authored.*
+| save-load-system.md | Rule 3 — Player Transform: Position (X,Y,Z) + Rotation (Yaw) | `FPlayerTransformSaveData` in schema; `UPlayerControllerSubsystem` implements `IHostileSaveProvider` |
+| save-load-system.md | Rule 3 — Health: Current HP, max HP, active status effects | `FHealthSaveData` in schema; `UHealthSubsystem` implements `IHostileSaveProvider` |
+| save-load-system.md | Rule 3 — Inventory: items, grid layout, weapon slots, ammo | `FInventorySaveData` in schema; `UInventorySubsystem` implements `IHostileSaveProvider` |
+| save-load-system.md | Rule 3 — Crafting: unlocked schematic ID set | `FCraftingSaveData` in schema; `UCraftingSubsystem` implements `IHostileSaveProvider` |
+| save-load-system.md | Rule 3 — Infection Spread: per-zone level, active spread vectors | `FInfectionSaveData` covers per-zone levels; spread-vectors deferred (TODO-C6) |
+| save-load-system.md | Rule 3 — Faction Reputation: reputation per faction ID | `FFactionSaveData` in schema; `UFactionSubsystem` implements `IHostileSaveProvider` |
+| save-load-system.md | Rule 3 — Investigation: completed clue IDs, active objective IDs | `FInvestigationSaveData` in schema; `UInvestigationSubsystem` implements `IHostileSaveProvider` |
+| save-load-system.md | Rule 3 — World Flags: per-actor interaction flags | `FWorldFlagsSaveData` (FGuid + bitfield array); `UWorldFlagsSubsystem` implements `IHostileSaveProvider` |
+| save-load-system.md | Rule 3 — Map System: fog bitmask, pinned locations, manual markers | `FMapSaveData` in schema; `UMapSubsystem` implements `IHostileSaveProvider` |
+| save-load-system.md | Rule 3 — Tutorial: dismissed hint IDs, completion flags per phase | `FTutorialSaveData` in schema; `UTutorialSubsystem` implements `IHostileSaveProvider` |
+| save-load-system.md | Rule 3 — GSM: last valid state at save time (Playing or Paused) | `FGSMSaveData` in schema; `UGameStateMachineSubsystem` implements `IHostileSaveProvider` |
+| save-load-system.md | Rule 2 — Save triggers: zone entry, key investigation event, clean exit | Three trigger paths: `FCheckpointReachedMessage`, `FInvestigationKeyEventMessage`, `ApplicationWillTerminateDelegate` |
+| save-load-system.md | Rule 2 — Save disabled in Cutscene/GameOver | `CanSave()` gates on `LastKnownGSMState` |
+| save-load-system.md | Rule 4 — Slot name `"HostileWorldSave_Slot0"` | `SaveSlotName = TEXT("HostileWorldSave_Slot0")` |
+| save-load-system.md | Rule 5 — Load sequence in GSM Loading state | `OnGSMStateChanged(Loading)` triggers async load; `GSM->OnLoadComplete()` transitions to Playing |
+| save-load-system.md | Rule 6 — Corruption: delete + HUD notification + new-game defaults | `OnLoadComplete` null-cast path: `DeleteGameInSlot` + `ShowNotification` + defaults |
+| save-load-system.md | Rule 7 — Save indicator 2.0s on write start | `NotifyHUDSaveStarted()` → `UHUDSubsystem::ShowSaveIndicator(2.0s)` |
+| save-load-system.md | AC8 — Blocking write on clean exit | `TriggerExitSave()` → `PopulateAndSave(bBlocking=true)` → synchronous `SaveGameToSlot` |
+| save-load-system.md | Tuning — `CheckpointCooldownSeconds = 30.0s` | `CheckpointCooldownSeconds` constant in `USaveLoadSubsystem`; enforced in `CanSave()` |
+| tutorial-system.md | TR-tutorial-006: persist completed HintIDs | `FTutorialSaveData.CompletedHintIDs` only (DISMISSED state removed per Tutorial GDD Rule 5 / C5 fix); restored before first level triggers register |
+| systems-index.md | Save/Load System (#6) must survive level transitions | `USaveLoadSubsystem` is Session-tier (ADR-0004); persists across level transitions |
 
 ## Performance Implications
 - **CPU**: `TriggerAutosave()` iterates `N` providers synchronously to collect data (N ≤ 10; sub-millisecond). Disk write is async — zero game-thread cost after collection.
@@ -329,11 +555,18 @@ ACheckpointActor (UWorld) — broadcasts FCheckpointReachedMessage
 No existing save code to migrate. `USaveLoadSubsystem` is a new class. When the Save/Load GDD is authored, it must reference this ADR and align its rules with the schema and trigger policy defined here.
 
 ## Validation Criteria
-- `USaveLoadSubsystem::TriggerAutosave()` called from a test checkpoint → `UHostileWorldSaveGame` serialized to `Saved/SaveGames/hostile_world_autosave.sav` on disk
-- `AsyncLoadGameFromSlot` with the autosave slot name → all 5 providers' `LoadFromSaveData()` called with non-null `UHostileWorldSaveGame`
-- Fresh game (no save file) → `AsyncLoadGameFromSlot` returns nullptr → all providers initialize with defaults, no crash
+- `TriggerAutosave()` from a test checkpoint → `UHostileWorldSaveGame` serialized to `Saved/SaveGames/HostileWorldSave_Slot0.sav` (slot name verified against GDD Rule 4)
+- GSM enters Loading state with existing save → all 12 providers' `LoadFromSaveData()` called with non-null `UHostileWorldSaveGame`; GSM transitions Loading → Playing
+- Fresh game (no save file) → GSM enters Loading → all 12 providers initialize with defaults, no crash; GSM transitions to Playing
 - `UTutorialSubsystem` marks hint `H_001` complete → `TriggerAutosave()` → kill PIE → re-enter PIE → `FTutorialSaveData.CompletedHintIDs` contains `H_001`
-- Game thread frame time: no hitch > 1ms at checkpoint (measured via `stat game` with save in flight)
+- GSM state = `Cutscene` → `TriggerAutosave()` → `CanSave()` returns false → no write occurs, no file written
+- GSM state = `GameOver` → `TriggerAutosave()` → `CanSave()` returns false → no write occurs
+- `FInvestigationKeyEventMessage` broadcast → `TriggerAutosave()` fires → save write begins (file timestamp updated)
+- Two `FCheckpointReachedMessage` events 5s apart with `CheckpointCooldownSeconds=30` → only first triggers a write; second is discarded
+- Corrupted save (manually zeroed) → GSM enters Loading → `OnLoadComplete` receives null cast → file deleted, providers get defaults, HUD notification visible for 5s
+- `TriggerExitSave()` called while `bSaveInProgress=false` → `SaveGameToSlot()` completes synchronously before function returns
+- `FHealthSaveData.CurrentHP` set to 42.0 → `TriggerAutosave()` → reload via GSM Loading → provider receives save with `CurrentHP == 42.0`
+- Game thread frame time: no hitch > 1ms at async checkpoint (measured via `stat game` with save in flight)
 - No subsystem calls `GetSubsystem<T>()` on a peer inside `Initialize()` without `Collection.InitializeDependency<T>()` guard (static analysis / code review check)
 
 ## Related Decisions

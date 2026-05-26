@@ -5,7 +5,7 @@
 # ADRs in this domain: ADR-0005, ADR-0006
 
 version: 1
-last_updated: "2026-05-20"
+last_updated: "2026-05-21"
 
 # ─── STATE OWNERSHIP ─────────────────────────────────────────────────────────
 
@@ -14,7 +14,7 @@ state_ownership:
     status: active
     owner_system: USaveLoadSubsystem
     adr: docs/architecture/adr-0006-save-load-serialization.md
-    interface: "TriggerAutosave() — only valid save path; LoadSaveOnStartup() called from UGameInstance::OnStart(); RegisterProvider(IHostileSaveProvider*) for subsystem opt-in"
+    interface: "TriggerAutosave() — async checkpoint/investigation saves (gated); TriggerExitSave() — blocking sync on clean exit; OnGSMStateChanged(Loading) — triggers async load; RegisterProvider(IHostileSaveProvider*) for subsystem opt-in"
     write_access: USaveLoadSubsystem-only (no subsystem may call AsyncSaveGameToSlot directly)
     referenced_by:
       - docs/architecture/adr-0006-save-load-serialization.md
@@ -30,29 +30,36 @@ interfaces:
     description: "Subsystems that contribute save data implement IHostileSaveProvider (PopulateSaveData / LoadFromSaveData) and call USaveLoadSubsystem::RegisterProvider(this) in their Initialize() after Collection.InitializeDependency<USaveLoadSubsystem>()."
     producer: USaveLoadSubsystem (calls all registered providers on save/load)
     consumers:
-      - UTutorialSubsystem (FTutorialSaveData)
-      - UQuestSubsystem (FQuestSaveData)
-      - UFactionSubsystem (FFactionSaveData)
+      - UPlayerControllerSubsystem (FPlayerTransformSaveData)
+      - UHealthSubsystem (FHealthSaveData)
       - UInventorySubsystem (FInventorySaveData)
-      - UInfectionSubsystem (FInfectionSaveData)
+      - UCraftingSubsystem (FCraftingSaveData)
+      - UInfectionSpreadSubsystem (FInfectionSaveData)   # World-tier; registers in Initialize(), unregisters in Deinitialize()
+      - UFactionSubsystem (FFactionSaveData)
+      - UInvestigationSubsystem (FInvestigationSaveData)
+      - UWorldFlagsSubsystem (FWorldFlagsSaveData)
+      - UMapSubsystem (FMapSaveData)
+      - UTutorialSubsystem (FTutorialSaveData)
+      - UGameStateMachineSubsystem (FGSMSaveData)
+      - UQuestSubsystem (FQuestSaveData)
     adr: docs/architecture/adr-0006-save-load-serialization.md
     referenced_by:
       - docs/architecture/adr-0006-save-load-serialization.md
     added: "2026-05-20"
-    revised: ""
+    revised: "2026-05-24 (C6 — UInfectionSpreadSubsystem corrected to World-tier; class renamed from UInfectionSubsystem)"
 
   - contract: checkpoint_save_trigger
     status: active
     pattern: gameplay_message_router
-    description: "ACheckpointActor broadcasts FCheckpointReachedMessage on TAG_Event_Checkpoint_Reached. USaveLoadSubsystem listens and calls TriggerAutosave(). No direct coupling between checkpoint actors and the save subsystem."
-    producer: ACheckpointActor
+    description: "Three save triggers: (1) ACheckpointActor broadcasts FCheckpointReachedMessage on zone entry; (2) UInvestigationSubsystem broadcasts FInvestigationKeyEventMessage on key milestone; (3) FCoreDelegates::ApplicationWillTerminateDelegate fires TriggerExitSave() (blocking) on clean exit. All async paths pass through CanSave() gate (Cutscene/GameOver blocked; 30s cooldown enforced)."
+    producer: ACheckpointActor, UInvestigationSubsystem, FCoreDelegates
     consumers:
       - USaveLoadSubsystem
     adr: docs/architecture/adr-0006-save-load-serialization.md
     referenced_by:
       - docs/architecture/adr-0006-save-load-serialization.md
     added: "2026-05-20"
-    revised: ""
+    revised: "2026-05-21 (C1 — added investigation trigger + exit trigger + CanSave gate)"
 
 # ─── PERFORMANCE BUDGETS ──────────────────────────────────────────────────────
 
@@ -96,8 +103,8 @@ api_decisions:
 
   - purpose: save_serialization_format
     status: active
-    api: "USaveGame subclass (UHostileWorldSaveGame) + UGameplayStatics::AsyncSaveGameToSlot / AsyncLoadGameFromSlot"
-    not: "FArchive custom binary; JSON file; blocking SaveGameToSlot on game thread"
+    api: "USaveGame subclass (UHostileWorldSaveGame) + UGameplayStatics::AsyncSaveGameToSlot / AsyncLoadGameFromSlot (async path) + SaveGameToSlot (synchronous, clean-exit only)"
+    not: "FArchive custom binary; JSON file; blocking SaveGameToSlot on game thread except clean-exit path"
     adr: docs/architecture/adr-0006-save-load-serialization.md
     reason: "USaveGame + UPROPERTY reflection handles versioning, Blueprint access, and schema evolution automatically. Async I/O prevents game-thread hitch at checkpoint. Single slot eliminates slot-management UI."
     referenced_by:
@@ -142,14 +149,14 @@ forbidden_patterns:
 
   - pattern: direct_async_save_call
     status: active
-    description: "No subsystem may call UGameplayStatics::AsyncSaveGameToSlot or AsyncLoadGameFromSlot directly. All save/load I/O must go through USaveLoadSubsystem::TriggerAutosave() and LoadSaveOnStartup()."
+    description: "No subsystem may call UGameplayStatics::AsyncSaveGameToSlot, SaveGameToSlot, or AsyncLoadGameFromSlot directly. All save I/O goes through USaveLoadSubsystem::TriggerAutosave() (async) or TriggerExitSave() (blocking exit). Load is triggered by GSM entering Loading state — no subsystem calls LoadGameFromSlot directly."
     why: "Direct save calls from multiple subsystems produce race conditions, duplicate writes, and bypass the IHostileSaveProvider aggregation contract. USaveLoadSubsystem is the sole save authority."
     adr: docs/architecture/adr-0006-save-load-serialization.md
     added: "2026-05-20"
 
   - pattern: uobject_in_save_struct
     status: active
-    description: "No save USTRUCT (FTutorialSaveData, FQuestSaveData, FFactionSaveData, FInventorySaveData, FInfectionSaveData, or any future save sub-struct) may contain UObject*, TObjectPtr<>, or TWeakObjectPtr<> fields."
+    description: "No save USTRUCT (FPlayerTransformSaveData, FHealthSaveData, FInventorySaveData, FCraftingSaveData, FInfectionSaveData, FFactionSaveData, FInvestigationSaveData, FWorldFlagsSaveData, FMapSaveData, FTutorialSaveData, FGSMSaveData, FQuestSaveData, or any future save sub-struct) may contain UObject*, TObjectPtr<>, or TWeakObjectPtr<> fields."
     why: "USaveGame serialization silently drops UObject* fields — object references do not survive save/load. Only primitive types, FString, FName, TArray/TMap/TSet of primitives are safe."
     adr: docs/architecture/adr-0006-save-load-serialization.md
     added: "2026-05-20"

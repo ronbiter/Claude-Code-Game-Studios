@@ -38,13 +38,14 @@
 
 ## Testing
 
-- **Framework**: [TO BE CONFIGURED — /test-setup will scaffold this]
+- **Framework**: UE Automation Testing (IMPLEMENT_SIMPLE_AUTOMATION_TEST / IMPLEMENT_COMPLEX_AUTOMATION_TEST)
 - **Minimum Coverage**: Logic systems, balance formulas, save/load
 - **Required Tests**: Balance formulas, gameplay systems, save data integrity
 
 ## Forbidden Patterns
 
 <!-- Add patterns that should never appear in this project's codebase -->
+
 - **polling_state_in_tick** — Tick() must not read another system's state to detect changes (ADR-0001)
 - **direct_cross_system_state_write** — Never write to state owned by another system (ADR-0001)
 - **blueprint_event_dispatchers_for_cpp_core** — Use DECLARE_DYNAMIC_MULTICAST_DELEGATE for C++ systems, not BP dispatchers (ADR-0001)
@@ -52,14 +53,16 @@
 ## Allowed Libraries / Addons
 
 <!-- Add approved third-party dependencies here -->
+
 - [None configured yet — add as dependencies are approved]
 
 ## Architecture Decisions Log
 
 <!-- Quick reference linking to full ADRs in docs/architecture/ -->
+
 - **ADR-0001** — Cross-System Communication: Dynamic Multicast Delegates (owner→subscriber) + Gameplay Message Router (global broadcast). See `docs/architecture/adr-0001-cross-system-communication.md`
 - **ADR-0002** — Game State Machine: `UHostileWorldGSM : UGameInstanceSubsystem + FTickableGameObject`. Survives level transitions. Priority-sorted queue. GameOver clears stack. See `docs/architecture/adr-0002-game-state-machine-implementation.md`
-- **ADR-0003** — Enhanced Input: PC owns all 22 IA_* bindings in `SetupInputComponent()`. IMC switches driven by GSM `OnStateEntered`. Runtime rebinding via `UEnhancedInputUserSettings` (UE5.3+). See `docs/architecture/adr-0003-enhanced-input-architecture.md`
+- **ADR-0003** — Enhanced Input: PC owns all 22 IA\_\* bindings in `SetupInputComponent()`. IMC switches driven by GSM `OnStateEntered`. Runtime rebinding via `UEnhancedInputUserSettings` (UE5.3+). See `docs/architecture/adr-0003-enhanced-input-architecture.md`
 
 ## Engine Specialists
 
@@ -75,12 +78,12 @@
 
 ### File Extension Routing
 
-| File Extension / Type | Specialist to Spawn |
-|-----------------------|---------------------|
-| Game code (.cpp, .h files) | unreal-specialist |
-| Shader / material files (.usf, .ush, Material assets) | unreal-specialist |
-| UI / screen files (.umg, UMG Widget Blueprints) | ue-umg-specialist |
-| Scene / prefab / level files (.umap, .uasset) | unreal-specialist |
-| Native extension / plugin files (Plugin .uplugin, modules) | unreal-specialist |
-| Blueprint graphs (.uasset BP classes) | ue-blueprint-specialist |
-| General architecture review | unreal-specialist |
+| File Extension / Type                                      | Specialist to Spawn     |
+| ---------------------------------------------------------- | ----------------------- |
+| Game code (.cpp, .h files)                                 | unreal-specialist       |
+| Shader / material files (.usf, .ush, Material assets)      | unreal-specialist       |
+| UI / screen files (.umg, UMG Widget Blueprints)            | ue-umg-specialist       |
+| Scene / prefab / level files (.umap, .uasset)              | unreal-specialist       |
+| Native extension / plugin files (Plugin .uplugin, modules) | unreal-specialist       |
+| Blueprint graphs (.uasset BP classes)                      | ue-blueprint-specialist |
+| General architecture review                                | unreal-specialist       |

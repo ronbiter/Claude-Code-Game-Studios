@@ -15,7 +15,7 @@ Proposed
 | **Knowledge Risk** | HIGH — UE 5.7 is post-LLM-cutoff |
 | **References Consulted** | `docs/engine-reference/unreal/VERSION.md`, `docs/engine-reference/unreal/modules/input.md`, ADR-0010 (noise API), ADR-0012 (damage sense API) |
 | **Post-Cutoff APIs Used** | `UAISense_Hearing::ReportNoiseEvent`, `UAISense_Damage::ReportDamageEvent` — correct APIs per engine specialist (2026-05-21); no ai-perception engine-reference doc exists; verify against UE 5.7 headers before implementing |
-| **Verification Required** | `UAIPerceptionSystem::ReportDamageEvent()` fires correctly after `TakeDamage()` on alien; `UAIPerceptionSystem::MakeNoise()` radius matches GDD noise values; `SweepMultiByChannel` + dot-product melee cone produces correct 60° arc at 150cm |
+| **Verification Required** | `UAISense_Damage::ReportDamageEvent()` fires correctly after `TakeDamage()` on alien; `UAISense_Hearing::ReportNoiseEvent()` radius matches GDD noise values; `SweepMultiByChannel` + dot-product melee cone produces correct 60° arc at 150cm |
 
 ## ADR Dependencies
 
@@ -36,8 +36,8 @@ The Combat System GDD defines a fully specified combat loop (weapon classes, hit
 
 - `UCombatComponent` is already registered in the subsystem registry as a per-actor component (ADR-0004). This placement is locked.
 - IMC_Combat push/pop must delegate to `AHostileWorldPlayerController::PushCombatIMC()` / `PopCombatIMC()` — Player Controller owns the `LocalPlayer` reference (GDD States and Transitions, canonical rule).
-- Weapon noise must use `UAIPerceptionSystem::MakeNoise()` (same API as ADR-0010 movement noise — consistent pattern).
-- Every damage application to an alien MUST call `UAIPerceptionSystem::ReportDamageEvent()` explicitly (ADR-0012 forbidden pattern `damage_sense_implicit_fire`).
+- Weapon noise must use `UAISense_Hearing::ReportNoiseEvent()` (same API as ADR-0010 movement noise — consistent pattern).
+- Every damage application to an alien MUST call `UAISense_Damage::ReportDamageEvent()` explicitly (ADR-0012 forbidden pattern `damage_sense_implicit_fire`).
 - Melee stamina deduction MUST call `AHostileCharacter::ConsumeStamina(float)` — no direct stamina write (ADR-0010 forbidden pattern `direct_stamina_write`).
 - No per-frame polling of alien/stealth state in Tick() (ADR-0001 forbidden pattern `polling_state_in_tick`).
 - GDD specifies combat state resets on zone transition (scene streaming edge case) — the combat coordinator must be a `UWorldSubsystem` so it resets on level transition.
@@ -67,7 +67,7 @@ Owns all per-player combat mechanics: weapon selection, hit detection, spread st
 - Weapon state: current weapon pointer, spread ring buffer, reload FSM, jam state, melee consecutive-hit counter (TMap)
 - Hit detection: hitscan trace from camera center with spread-adjusted direction; melee sphere sweep + dot-product filter
 - Damage calculation: Formula 1 (D_hit = ceil(D_base × M_loc × M_dist × M_condition × M_armor))
-- AI perception reporting: MakeNoise() for weapon fire; ReportDamageEvent() after each alien hit
+- AI perception reporting: `UAISense_Hearing::ReportNoiseEvent()` for weapon fire; `UAISense_Damage::ReportDamageEvent()` after each alien hit
 - Stamina gate for melee: calls `CanMelee()` → `AHostileCharacter::ConsumeStamina(10)`
 - Reload FSM: pre-deducts reserve on start; partial-fill on cancel; shotgun per-shell counting
 - Spread state: `TArray<double> ShotTimestamps` ring buffer (max 16); N_consecutive = entries within trailing 1.0s window
@@ -94,8 +94,8 @@ Owns the ECombatState machine, active alien set, disengagement timer, and IMC_Co
 AHostileCharacter
   └── UCombatComponent
         ├── FireWeapon()                    → hitscan trace → Formula 1
-        │     ├── UAIPerceptionSystem::MakeNoise()          (weapon noise → alien hearing)
-        │     └── UAIPerceptionSystem::ReportDamageEvent()  (damage sense → alien AI)
+        │     ├── UAISense_Hearing::ReportNoiseEvent()       (weapon noise → alien hearing)
+        │     └── UAISense_Damage::ReportDamageEvent()       (damage sense → alien AI)
         ├── MeleeAttack()                   → SweepMultiByChannel + dot filter
         │     └── AHostileCharacter::ConsumeStamina(10)
         ├── Reload()                        → reserve pre-deduct → FSM
@@ -185,18 +185,20 @@ void AHostileWorldPlayerController::PopCombatIMC();
 
 // ── Noise emission (per weapon fire, in UCombatComponent::FireWeapon()) ───────
 
-UAIPerceptionSystem::MakeNoise(
-    Instigator,
+UAISense_Hearing::ReportNoiseEvent(
+    GetWorld(),
+    MuzzleLocation,
     WeaponNoiseLoudness,   // Pistol=0.4, Shotgun=0.6, Rifle=1.0 (scaled to GDD noise radii)
-    PlayerController,
-    MuzzleLocation
+    Instigator,
+    WeaponNoiseMaxRange,   // meters → cm conversion applied upstream
+    NAME_None
 );
 
 // ── Damage sense reporting (per hit, in UCombatComponent after TakeDamage) ───
 
-UAIPerceptionSystem::ReportDamageEvent(
+UAISense_Damage::ReportDamageEvent(
     GetWorld(), AlienActor, PlayerCharacter,
-    HitResult.ImpactPoint, HitDirection, DamageAmount
+    DamageAmount, HitResult.ImpactPoint, HitResult.ImpactPoint, NAME_None
 );
 ```
 
@@ -238,7 +240,7 @@ UAIPerceptionSystem::ReportDamageEvent(
   **Mitigation**: Use `InitializeDependency<UAlienSquadSubsystem>()` in UCombatSubsystem::Initialize() per ADR-0004 `initialize_peer_caching` rule.
 - **Risk**: Disengagement timer Formula 3 counts `ActiveCombatAliens` but aliens may be garbage-collected without firing `OnAlienKilled` (e.g., level unload during combat).
   **Mitigation**: `TSet<TWeakObjectPtr<AAlienCharacter>>` — check `IsValid()` before counting. UCombatSubsystem::Deinitialize() clears the set.
-- **Risk**: `UAIPerceptionSystem::ReportDamageEvent()` must be called with the correct world context; null-world edge case during level transition.
+- **Risk**: `UAISense_Damage::ReportDamageEvent()` must be called with the correct world context; null-world edge case during level transition.
   **Mitigation**: Guard with `IsValid(GetWorld())` before the call. Combat triggering during level transition is blocked by UCombatSubsystem Deinitialize().
 - **Risk**: IMC_Combat left on stack if player quits or crashes during Active Combat.
   **Mitigation**: UCombatSubsystem::Deinitialize() calls `PC->PopCombatIMC()` if ECombatState != NonCombat before teardown.
@@ -247,7 +249,7 @@ UAIPerceptionSystem::ReportDamageEvent(
 
 | GDD System | Requirement | How This ADR Addresses It |
 |------------|-------------|--------------------------|
-| combat-system.md | Rule 1 — four weapon classes with distinct behavior | UCombatComponent reads weapon data via IInventoryInterface; weapon type drives MakeNoise() loudness and spread parameters |
+| combat-system.md | Rule 1 — four weapon classes with distinct behavior | UCombatComponent reads weapon data via IInventoryInterface; weapon type drives ReportNoiseEvent() loudness and spread parameters |
 | combat-system.md | Rule 2 — hitscan hit detection + melee cone check | UCombatComponent::FireWeapon() performs line trace; MeleeAttack() performs SweepMultiByChannel + dot-product filter at 150cm/60° |
 | combat-system.md | Formula 1 — D_hit = ceil(D_base × M_loc × M_dist × M_condition × M_armor) | UCombatComponent::CalculateDamage() applies all five multipliers; M_condition from IInventoryInterface; M_armor from AAlienCharacter |
 | combat-system.md | Formula 2 — S_current spread accumulation ring buffer | UCombatComponent::ShotTimestamps (TArray<double>); N_consecutive = count within trailing 1.0s window |
@@ -260,13 +262,13 @@ UAIPerceptionSystem::ReportDamageEvent(
 | combat-system.md | Rule 8 — call for backup via alien LOS timer | UCombatSubsystem::NotifyBackupCalled() receives OnBackupCalled from Alien AI; fires FOnBackupCalled delegate to HUD |
 | combat-system.md | States: Unified combat-state model (three distinct concepts) | ECombatState (UCombatSubsystem) ≠ alien combat behavior (ADR-0012) ≠ IsPlayerUnderThreat (detection ≥75). Three independent signals, separately owned. |
 | stealth-system.md | OnCombatDisengaged triggers stealth reset | UCombatSubsystem::OnCombatDisengaged delegate — Stealth System subscribes via AddDynamic() |
-| alien-ai-system.md | Alien receives damage sense event after player hits it | UCombatComponent::FireWeapon() calls ReportDamageEvent() after every alien hit — satisfies ADR-0012 forbidden pattern |
-| alien-ai-system.md | Alien hears weapon fire noise | UCombatComponent::FireWeapon() calls MakeNoise() per weapon type — noise radius matches GDD Rule 2 noise table |
+| alien-ai-system.md | Alien receives damage sense event after player hits it | UCombatComponent::FireWeapon() calls `UAISense_Damage::ReportDamageEvent()` after every alien hit — satisfies ADR-0012 forbidden pattern |
+| alien-ai-system.md | Alien hears weapon fire noise | UCombatComponent::FireWeapon() calls `UAISense_Hearing::ReportNoiseEvent()` per weapon type — noise radius matches GDD Rule 2 noise table |
 | movement-system.md | Dodge i-frame invulnerability window | UCombatComponent subscribes to OnDodgeStarted(IFrameDuration) — used for enemy attack timing awareness |
 | movement-system.md | Melee stamina cost (10 per swing) | UCombatComponent::MeleeAttack() gates on CanMelee() then calls AHostileCharacter::ConsumeStamina(10) |
 
 ## Performance Implications
-- **CPU (weapon fire)**: Single line trace ~0.1ms; damage formula O(1); MakeNoise + ReportDamageEvent < 0.05ms combined. Total per-shot: < 0.2ms.
+- **CPU (weapon fire)**: Single line trace ~0.1ms; damage formula O(1); ReportNoiseEvent + ReportDamageEvent < 0.05ms combined. Total per-shot: < 0.2ms.
 - **CPU (melee)**: SweepMultiByChannel at 150cm + dot-product filter < 0.15ms. Per swing: < 0.2ms.
 - **CPU (spread ring buffer)**: O(N) scan of ≤16 float entries per shot. Negligible.
 - **CPU (disengagement timer)**: FTimerHandle fires at most once per second during Disengaging state. O(N_aliens) TWeakObjectPtr validity check < 0.1ms.
@@ -279,7 +281,7 @@ No existing combat code to migrate. UCombatComponent and UCombatSubsystem are ne
 ## Validation Criteria
 - `NotifyCombatTrigger()` called when detection reaches 100 → ECombatState transitions to CombatEntry within one frame; `PC->PushCombatIMC()` called → IMC_Combat active.
 - `FireWeapon()` on pistol at unarmored alien head, effective range, clean weapon → `TakeDamage(38, FPointDamageEvent)` called on alien (Formula 1: ceil(25×1.5×1.0×1.0×1.0)=38).
-- `FireWeapon()` called → `UAIPerceptionSystem::ReportDamageEvent()` called on same alien in same frame.
+- `FireWeapon()` called → `UAISense_Damage::ReportDamageEvent()` called on same alien in same frame.
 - Five shots within 1.0s (pistol) → `GetCurrentSpread()` = 1.0° + min(5×0.2°, 5.0°) = 2.0°.
 - All aliens dead, player NOT in cover → DisengageTimer = 10.0s. At 10.0s → ECombatState = Disengaged; `PC->PopCombatIMC()` called.
 - All aliens dead, player in cover → DisengageTimer = 7.0s (Formula 3 minimum confirmed).
@@ -292,6 +294,6 @@ No existing combat code to migrate. UCombatComponent and UCombatSubsystem are ne
 - [ADR-0001](adr-0001-cross-system-communication.md) — communication patterns (delegates, GameplayMessageSubsystem)
 - [ADR-0003](adr-0003-enhanced-input-architecture.md) — Enhanced Input IMC push/pop via UEnhancedInputLocalPlayerSubsystem
 - [ADR-0004](adr-0004-subsystem-module-architecture.md) — per_actor_state (UCombatComponent), UWorldSubsystem tier
-- [ADR-0010](adr-0010-movement-architecture.md) — OnDodgeStarted event, ConsumeStamina, MakeNoise API
-- [ADR-0012](adr-0012-alien-ai-system.md) — OnAlienKilled event, ReportDamageEvent requirement, UAlienSquadSubsystem
+- [ADR-0010](adr-0010-movement-architecture.md) — OnDodgeStarted event, ConsumeStamina, ReportNoiseEvent API
+- [ADR-0012](adr-0012-alien-ai-system.md) — OnAlienKilled event, UAISense_Damage::ReportDamageEvent requirement, UAlienSquadSubsystem
 - [design/gdd/combat-system.md](../../design/gdd/combat-system.md) — full mechanical specification

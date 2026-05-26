@@ -42,7 +42,7 @@ Each save captures a complete snapshot of the following subsystems:
 | Investigation | Completed clue IDs, active objective IDs | `SaveInvestigationState()` |
 | World Flags | Per-actor interaction flags (looted, opened, collected, destroyed) | `SaveWorldFlags()` |
 | Map System | Fog-of-war bitmask per zone, auto-pinned locations, manual markers | `SaveMapState()` |
-| Tutorial System | Dismissed hint IDs (set of `FName`), tutorial completion flags per phase | `SaveTutorialState()` |
+| Tutorial System | Completed hint IDs (set of `FName`) — DISMISSED state removed (Tutorial GDD Rule 5) | `SaveTutorialState()` |
 | GSM | Last valid GSM state at save time (always Playing or Paused) | `GetCurrentState()` |
 
 **Rule 4 — Save Format**

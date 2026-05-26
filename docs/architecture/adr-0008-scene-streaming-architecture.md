@@ -14,8 +14,8 @@ Proposed
 | **Domain** | Scene Streaming (World Partition, Data Layers, Asset Streaming) |
 | **Knowledge Risk** | HIGH — UE 5.7 post-LLM-cutoff. World Partition and Data Layer APIs evolved significantly in 5.4–5.7. |
 | **References Consulted** | `docs/engine-reference/unreal/VERSION.md`, `design/gdd/scene-management.md` |
-| **Post-Cutoff APIs Used** | `UDataLayerSubsystem::SetDataLayerInstanceRuntimeState()`, `EDataLayerRuntimeState` enum, `UDataLayerAsset` (5.1+ Data Layer asset type). All require explicit verification against UE 5.7 docs before implementation. |
-| **Verification Required** | (1) Confirm `UDataLayerSubsystem` access path in UE 5.7 — post-5.4 Epic may have replaced `GetWorld()->GetSubsystem<UDataLayerSubsystem>()` with `UWorld::GetDataLayerManager()` or a renamed class. Check `DataLayerSubsystem.h` in engine install. (2) Confirm `SetDataLayerInstanceRuntimeState()` parameter types and `EDataLayerRuntimeState` enum values unchanged in 5.4–5.7. (3) Confirm `FStreamableManager` is still the correct non-Addressables async load path in 5.7. (4) Test `FStreamableManager` destruction with in-flight request in PIE — confirm no stale delegate fires on level transition after `CancelHandle()` in `Deinitialize()`. (5) Confirm `AZoneBoundaryVolume` collision profile fires overlap against player capsule in PIE. (6) Validate World Partition cell size of 25,200,000 cm is within supported range for UE 5.7. (7) Confirm `IStreamingManager` API for memory pressure reading has not been replaced in 5.7. |
+| **Post-Cutoff APIs Used** | `UDataLayerManager::SetDataLayerInstanceRuntimeState()` (accessed via `GetWorld()->GetDataLayerManager()`), `EDataLayerRuntimeState` enum, `UDataLayerAsset` (5.1+). Corrected from `UDataLayerSubsystem` — engine specialist review 2026-05-21. |
+| **Verification Required** | (1) ✅ CONFIRMED: `UDataLayerSubsystem` removed in UE 5.7; correct access is `GetWorld()->GetDataLayerManager()` returning `UDataLayerManager*`. All call sites in this ADR corrected — engine specialist review 2026-05-21. (2) Confirm `SetDataLayerInstanceRuntimeState()` parameter types and `EDataLayerRuntimeState` enum values unchanged in 5.4–5.7. (3) Confirm `FStreamableManager` is still the correct non-Addressables async load path in 5.7. (4) Test `FStreamableManager` destruction with in-flight request in PIE — confirm no stale delegate fires on level transition after `CancelHandle()` in `Deinitialize()`. (5) Confirm `AZoneBoundaryVolume` collision profile fires overlap against player capsule in PIE. (6) Validate World Partition cell size of 25,200,000 cm is within supported range for UE 5.7. (7) Confirm `IStreamingManager` API for memory pressure reading has not been replaced in 5.7. |
 
 ## ADR Dependencies
 
@@ -62,13 +62,13 @@ Hostile World is an open-world game where the environment transforms in real tim
 
 **World Partition is the single streaming authority.** No manual LevelStreaming actors exist in the open world. World Partition automatically streams cells based on player proximity and velocity. The Mountain Prison is a separate UWorld loaded via OpenLevel() — a full GSM Loading state transition.
 
-**Data Layers are managed via UDataLayerSubsystem.** Accessed at call sites via `GetWorld()->GetSubsystem<UDataLayerSubsystem>()`. Layer activation and deactivation use `SetDataLayerInstanceRuntimeState()`. Data Layer assets (UDataLayerAsset) are hard-referenced UPROPERTY on USceneManagementSubsystem — guaranteed available from world init.
+**Data Layers are managed via UDataLayerManager.** Accessed at call sites via `GetWorld()->GetDataLayerManager()`. Layer activation and deactivation use `SetDataLayerInstanceRuntimeState()`. Data Layer assets (UDataLayerAsset) are hard-referenced UPROPERTY on USceneManagementSubsystem — guaranteed available from world init. Note: `UDataLayerSubsystem` does not exist in UE 5.7 — `UDataLayerManager` is the correct class (engine specialist confirmed 2026-05-21).
 
 **Non-world asset loading** (UI, audio, data tables) during GSM Loading state uses `FStreamableManager::RequestAsyncLoad()`. FStreamableManager instance is owned by USceneManagementSubsystem. All active `TSharedPtr<FStreamableHandle>` are stored as member variables and explicitly cancelled via `Handle->CancelHandle()` in `Deinitialize()` — this prevents stale delegate fires if a level transition occurs while an async load is in flight. This is distinct from World Partition cell streaming (handled automatically by the engine).
 
 **Zone crossing detection** uses AZoneBoundaryVolume actors (AVolume subclass) with OnActorBeginOverlap bindings. A 3.0s FTimerHandle debounce prevents rapid oscillation thrash. Zone IDs are FName Runtime Grid Tags assigned in World Partition.
 
-**Data Layer swap state machine** runs inside USceneManagementSubsystem. Each phase (Unloading → Flushing → Loading → Active) is driven by callbacks from UDataLayerSubsystem. Rollback re-activates the previous stable state. Max queue depth of 4 concurrent swap requests, serialized by player proximity.
+**Data Layer swap state machine** runs inside USceneManagementSubsystem. Each phase (Unloading → Flushing → Loading → Active) is driven by callbacks from UDataLayerManager. Rollback re-activates the previous stable state. Max queue depth of 4 concurrent swap requests, serialized by player proximity.
 
 **Memory pressure monitoring** reads streaming pool utilization via IStreamingManager on a recurring FTimerHandle (interval: 2.0s). This is NOT a Tick() read — using a timer avoids the `polling_state_in_tick` forbidden pattern (ADR-0001). Four pressure levels: Normal (<70%), Elevated (70–85%), High (85–95%), Critical (>95%) drive streaming priority deactivation.
 
@@ -87,7 +87,7 @@ Hostile World is an open-world game where the environment transforms in real tim
 │           │            └──────────────┬───────────────────┘  │
 │  ┌────────▼────────┐                  │                       │
 │  │ AZoneBoundary   │   ┌─────────────▼──────────────────┐   │
-│  │ Volume overlap  │   │  UDataLayerSubsystem            │   │
+│  │ Volume overlap  │   │  UDataLayerManager              │   │
 │  │ → debounce 3.0s │   │  SetDataLayerInstanceRuntime   │   │
 │  └────────┬────────┘   │  State(Asset, EState)          │   │
 │           │            └────────────────────────────────┘   │
@@ -209,7 +209,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FDataLayerChangedDelegate, FName, L
 ### Alternative 1: UGameInstanceSubsystem for Scene Management
 - **Description**: Own scene state at the session tier so it survives the prison→open world level transition without needing save restore.
 - **Pros**: Debounce timers and swap queues survive the level load. Simpler mid-transition state.
-- **Cons**: Violates ADR-0004's principle that session-tier subsystems hold only state that must cross level boundaries. Scene streaming is inherently per-level. Bloats session memory with per-world Data Layer references. UDataLayerSubsystem is a UWorldSubsystem — a GameInstance subsystem would need a UWorld reference that becomes invalid on transition.
+- **Cons**: Violates ADR-0004's principle that session-tier subsystems hold only state that must cross level boundaries. Scene streaming is inherently per-level. Bloats session memory with per-world Data Layer references. UDataLayerManager is accessed via `GetWorld()->GetDataLayerManager()` — a GameInstance subsystem would need a UWorld reference that becomes invalid on transition.
 - **Rejection Reason**: ADR-0004 world-tier pattern is the correct fit. Prison→open world transition is a full level load anyway (GSM Loading with deep inhale); any in-flight swap state is invalid after the transition and should be discarded, not preserved.
 
 ### Alternative 2: Manual Level Streaming Alongside World Partition
@@ -229,13 +229,13 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FDataLayerChangedDelegate, FName, L
 ### Positive
 - World Partition provides automatic distance-based streaming with no per-frame subsystem logic required for cell management
 - UWorldSubsystem tier keeps scene state scoped correctly — no risk of stale world references across level transitions
-- UDataLayerSubsystem is the engine's canonical Data Layer management API — no custom streaming infrastructure needed
+- `UDataLayerManager` (via `GetWorld()->GetDataLayerManager()`) is the engine's canonical Data Layer management API — no custom streaming infrastructure needed
 - IHostileSaveProvider pattern (ADR-0006) handles all cross-session scene state persistence cleanly
 - FStreamableManager gives direct async control over non-world assets without Addressables overhead
 
 ### Negative
 - Zone boundary detection requires AZoneBoundaryVolume actors placed in the world — level designers must place and configure zone boundaries manually
-- UDataLayerSubsystem API must be verified against UE 5.7 install before implementation (post-LLM-cutoff HIGH risk — see Verification Required items 1–2)
+- `UDataLayerManager` access path confirmed by engine specialist (2026-05-21); `SetDataLayerInstanceRuntimeState()` parameter types still require verification against UE 5.7 install before first story (Verification Required item 2)
 - Hard-referenced UDataLayerAsset properties on USceneManagementSubsystem mean all 11 Data Layer assets load into memory at world init — acceptable at indie scale
 - USceneManagementSubsystem must explicitly manage FStreamableHandle and IHostileSaveProvider lifetime in Deinitialize() — forgetting either causes dangling pointers
 
@@ -243,7 +243,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FDataLayerChangedDelegate, FName, L
 
 | Risk | Severity | Mitigation |
 |------|----------|------------|
-| UDataLayerSubsystem API changed in 5.4–5.7 — access path or class name may differ | HIGH | Engine programmer checks DataLayerSubsystem.h in UE 5.7 install before first story starts. All Data Layer call sites isolated in USceneManagementSubsystem; fix is localized. (Verification Required items 1–2) |
+| ~~UDataLayerSubsystem API changed in 5.4–5.7~~ | HIGH (MITIGATED) | ✅ Confirmed by engine specialist 2026-05-21: `UDataLayerSubsystem` removed; use `GetWorld()->GetDataLayerManager()` returning `UDataLayerManager*`. All call sites corrected in this ADR. `SetDataLayerInstanceRuntimeState()` param types still require verification (item 2). |
 | FStreamableManager in-flight delegate fires into destroyed UWorldSubsystem on level transition | HIGH (MITIGATED) | All TSharedPtr<FStreamableHandle> stored as members. Deinitialize() calls CancelHandle() on all active handles before subsystem teardown. No delegate fires after Deinitialize(). |
 | IHostileSaveProvider dangling pointer in USaveLoadSubsystem after level transition | HIGH (MITIGATED) | Deinitialize() calls USaveLoadSubsystem::UnregisterProvider(this) before teardown. Initialize()/Deinitialize() symmetry enforced. |
 | World Partition cell size 25,200,000 cm may cause long HLOD build times | MEDIUM | Prototype cell size early (GDD OQ-7). Set up HLOD pipeline before content authoring begins. |
@@ -259,7 +259,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FDataLayerChangedDelegate, FName, L
 | scene-management.md | TR-scene-001: World Partition single streaming authority | Decided: World Partition is sole authority; no manual LevelStreaming actors; mountain prison is a separate World via OpenLevel() |
 | scene-management.md | TR-scene-002: Cell size 25,200,000 cm, immutable | Acknowledged as a project-setup decision; cell size is a World Partition project setting. ADR confirms immutability constraint. |
 | scene-management.md | TR-scene-003: Max 500 actors per cell | Enforced via build validation rule (World Partition cell budget check). ADR-0008 owns the enforcement requirement. |
-| scene-management.md | TR-scene-004: Runtime Grid Tags for zones; Data Layers for activation | Decided: Zone IDs = FName Runtime Grid Tags; activation/deactivation via UDataLayerSubsystem::SetDataLayerInstanceRuntimeState() |
+| scene-management.md | TR-scene-004: Runtime Grid Tags for zones; Data Layers for activation | Decided: Zone IDs = FName Runtime Grid Tags; activation/deactivation via `UDataLayerManager::SetDataLayerInstanceRuntimeState()` (accessed via `GetWorld()->GetDataLayerManager()`) |
 | scene-management.md | TR-scene-005: HLOD for Clean + Infected at build time | Acknowledged: HLOD generation is a build pipeline step. Both variants (DL_Clean, DL_Infected) require HLOD generated before ship. |
 | scene-management.md | TR-scene-006: FStreamableManager during GSM Loading; 30s timeout | Decided: FStreamableManager owned by USceneManagementSubsystem; 30s timeout implemented as FTimerHandle that cancels all in-flight loads and proceeds with partial content. |
 | scene-management.md | TR-scene-007: Streaming memory pool budgets per platform | Acknowledged: Platform budgets are Project Settings values. USceneManagementSubsystem reads pool capacity at init; pressure thresholds are configurable tuning knobs. |

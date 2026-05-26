@@ -209,21 +209,23 @@ On phase complete (t >= 0.65s):
 
 ### Noise Emission
 
-Noise emitted via `UAIPerceptionSystem::MakeNoise()` (static helper, UE4+) after computing:
+Noise emitted via `UAISense_Hearing::ReportNoiseEvent()` after computing:
 
 ```
 R_noise = clamp((N_base(S) × M_surface_noise + N_exhaust) × 1.5, 0, 200)  [meters]
 
-// Correct API (validated by engine specialist — ReportNoise() does not exist):
-UAIPerceptionSystem::MakeNoise(
-    GetOwner(),                    // Instigator
-    R_noise / 200.0f,              // Loudness (0–1, normalized from radius)
-    GetOwner(),                    // NoiseInstigator
-    GetOwner()->GetActorLocation() // Location
+// Correct API (engine specialist 2026-05-21 — UAIPerceptionSystem::MakeNoise() does not exist):
+UAISense_Hearing::ReportNoiseEvent(
+    GetWorld(),                      // WorldContext
+    GetOwner()->GetActorLocation(),  // NoiseLocation
+    R_noise / 200.0f,                // Loudness (0–1, normalized from radius)
+    GetOwner(),                      // Instigator
+    R_noise * 100.0f,                // MaxRange (meters → cm)
+    NAME_None                        // Tag
 );
 ```
 
-Alternatively, construct `FAINoiseEvent` and call `UAIPerceptionSystem::ReportEvent()` for full parameter control. All `UAISenseConfig_Hearing` aliens within `R_noise` meters receive the hearing percept. `OnNoiseEmitted(R_noise)` delegate also fires for any non-AI consumers.
+Alternatively, construct `FAINoiseEvent` and call `UAIPerceptionSystem::ReportEvent()` for full parameter control (verify this path against UE 5.7 headers). All `UAISenseConfig_Hearing` aliens within `R_noise` meters receive the hearing percept. `OnNoiseEmitted(R_noise)` delegate also fires for any non-AI consumers.
 
 ## Alternatives Considered
 
@@ -272,8 +274,8 @@ Alternatively, construct `FAINoiseEvent` and call `UAIPerceptionSystem::ReportEv
   - *Mitigation*: Set `bAllowPhysicsRotationDuringAnimRootMotion = false` during dodge. Disable root motion during Recovery phase. During Coast phase, explicitly call `ApplyRootMotionToVelocity(DeltaTime)` inside `PhysDodge()` — CMC does NOT auto-apply root motion during MOVE_Custom. Test explicitly at first playable.
 - **Risk**: Cover exit one-frame flicker when `UCoverComponent` calls `SetMovementMode(MOVE_Custom, 1)` mid-tick.
   - *Mitigation*: Handle cover exit in `UpdateCharacterStateAfterMovement()` rather than mid-tick to prevent single-frame state inconsistency.
-- **Risk**: `UAIPerceptionSystem::ReportNoise()` API changed in 5.7.
-  - *Mitigation*: Verify API at project setup. The GDD noise requirement can fall back to manual radius sphere overlap + `UAIPerceptionComponent::ReportNoise` per-alien if the global API is unavailable.
+- **Risk**: `UAIPerceptionSystem::MakeNoise()` does not exist in UE 5.7 (engine specialist confirmed 2026-05-21).
+  - *Mitigation*: Use `UAISense_Hearing::ReportNoiseEvent()` — correct API documented above. Fallback: manual radius sphere overlap + per-alien stimulus if ReportNoiseEvent unavailable at project setup.
 - **Risk**: Foot IK node name changed in UE 5.7 Animation Authoring update (noted as breaking change in VERSION.md).
   - *Mitigation*: Verify current foot IK node (`FAnimNode_FootPlacement` vs legacy `AnimNode_LegIK`) at project setup. Document the correct node name in engine-reference before starting animation work.
 
@@ -288,7 +290,7 @@ Alternatively, construct `FAINoiseEvent` and call `UAIPerceptionSystem::ReportEv
 | movement-system.md | TR-movement-005 | Cover = UCoverComponent + MOVE_Custom(1) | `UCoverComponent` owns proximity; calls `SetMovementMode(MOVE_Custom, 1)` |
 | movement-system.md | TR-movement-006 | Cover detection event-driven at ≤4Hz, never per-frame | `UCoverComponent` uses `FTimerHandle` at 4Hz + event triggers on input/direction change |
 | movement-system.md | TR-movement-007 | Fire OnDodgeStarted/OnDodgeEnded delegates | `DECLARE_DYNAMIC_MULTICAST_DELEGATE` on `UHostileMovementComponent`; fired at phase transitions |
-| movement-system.md | TR-movement-008 | Noise as spherical sound events; radius = Noise × 1.5m | `UHostileMovementComponent` computes `R_noise` and calls `UAIPerceptionSystem::ReportNoise()` |
+| movement-system.md | TR-movement-008 | Noise as spherical sound events; radius = Noise × 1.5m | `UHostileMovementComponent` computes `R_noise` and calls `UAISense_Hearing::ReportNoiseEvent()` |
 | movement-system.md | TR-movement-009 | OnMovementStateChanged delegate for Stealth/Camera/AI | `FOnMovementStateChanged` multicast delegate; fired on every state transition |
 | movement-system.md | TR-movement-010 | All timers in real-time seconds (accumulated Δt) | All phase tracking uses `PhysDodge(float DeltaTime)` accumulator — explicit prohibition on frame counts |
 | movement-system.md | TR-movement-011 | Animation Blueprint reads state — movement does not drive animation | CMC exposes state via `GetCurrentMovementState()` read-only; Anim BP pulls, CMC never pushes |
@@ -298,7 +300,7 @@ Alternatively, construct `FAINoiseEvent` and call `UAIPerceptionSystem::ReportEv
 | physics-system.md | TR-physics-004 | Ground detection via pelvis line trace; surface classified via Physical Material | `UHostileMovementComponent` calls `UPhysicsHelperSubsystem::GetSurfaceType()` per tick for `M_surface` multiplier |
 | health-system.md | TR-health-004 | Dodge i-frames negate damage during 0.25s active window | Health System subscribes to `OnDodgeStarted(0.25f)` / `OnDodgeEnded()` via AddDynamic |
 | stealth-system.md | TR-stealth-007 | Stealth reads noise and visibility from Movement each frame | Stealth subscribes to `OnNoiseEmitted` and `OnMovementStateChanged`; maps state to visibility modifier |
-| ai-system.md | TR-ai-002 | Alien AI uses UAISenseConfig_Hearing for noise detection | Movement fires `UAIPerceptionSystem::ReportNoise()` with computed radius |
+| ai-system.md | TR-ai-002 | Alien AI uses UAISenseConfig_Hearing for noise detection | Movement fires `UAISense_Hearing::ReportNoiseEvent()` with computed radius |
 
 ## Performance Implications
 
@@ -334,5 +336,5 @@ No existing movement code — this is greenfield. The ADR establishes the class 
 - [ADR-0001](adr-0001-cross-system-communication.md) — Dynamic multicast delegate pattern used for all movement events
 - [ADR-0003](adr-0003-enhanced-input-architecture.md) — Input routing: PC fires delegates, CMC subscribes; CMC never binds IA_* directly
 - [ADR-0004](adr-0004-subsystem-module-architecture.md) — UCoverComponent as UActorComponent; UHostileMovementComponent in Source/HostileWorld/
-- [ADR-0007](adr-0007-physics-collision-architecture.md) — Surface queries via UPhysicsHelperSubsystem::GetSurfaceType(); noise via UAIPerceptionSystem
+- [ADR-0007](adr-0007-physics-collision-architecture.md) — Surface queries via UPhysicsHelperSubsystem::GetSurfaceType(); noise via UAISense_Hearing::ReportNoiseEvent
 - [design/gdd/movement-system.md](../../design/gdd/movement-system.md) — Full movement rules, formulas, state table, and acceptance criteria

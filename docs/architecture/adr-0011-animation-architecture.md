@@ -270,10 +270,11 @@ void UHostileMovementComponent::PhysDodge_Coast(float DeltaTime)
 
     if (RootMotion.bHasRootMotion)
     {
-        // Transform from local to world space using actor transform
-        const FTransform WorldRootMotion =
-            RootMotion.GetRootMotionTransform().GetRelativeTransform(CharacterOwner->GetActorTransform());
-        Velocity = WorldRootMotion.GetTranslation() / DeltaTime;
+        // Rotate the local-space delta into world space.
+        // GetRelativeTransform() computes B⁻¹·A (wrong direction) — use TransformVector instead.
+        const FVector WorldDelta = CharacterOwner->GetActorTransform().TransformVector(
+            RootMotion.GetRootMotionTransform().GetTranslation());
+        Velocity = WorldDelta / DeltaTime;
     }
     // else: fall back to launch velocity from PhysDodge_Launch
 }
@@ -348,7 +349,7 @@ void AHostileCharacter::OnCombatDisengaged()
 ### Risks
 - **[HIGH] `LinkAnimClassLayers()` API changed in 5.7**: Verification required before implementation. Fallback: if API signature changed, switch to `SetAnimInstanceClass()` on a secondary mesh component (Alternative C), accepted as implementation pivot.
 - **[MEDIUM] IK Rig runtime node availability in 5.7 ABP**: Must be confirmed in editor. Fallback: use legacy Two Bone IK nodes per foot if IK Rig node is unavailable (lower quality surface adaptation but functional).
-- **[MEDIUM] Root motion coordinate space in PhysCustom**: `ConsumeRootMotion()` returns local-space transform. The world-space conversion must use the actor's transform at extraction time, not the previous frame. Off-by-one frame error produces a visible position pop at Coast start.
+- **[MEDIUM] Root motion coordinate space in PhysCustom**: `ConsumeRootMotion()` returns local-space transform. ✅ Corrected 2026-05-24: `GetRelativeTransform()` computed the inverse direction (local→relative, not local→world); replaced with `ActorTransform.TransformVector(LocalDelta)`. Validate 190–210cm Coast displacement in PIE before merging.
 - **[LOW] Pelvis over-correction on steep slopes**: Clamp pelvis offset to ±15cm. If clamping causes floating feet on slopes > 30°, adjust clamp or disable IK above a configurable slope threshold.
 
 ## GDD Requirements Addressed

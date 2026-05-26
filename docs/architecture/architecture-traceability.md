@@ -1,14 +1,18 @@
 # Architecture Traceability Index
 
-> **Last Updated:** 2026-05-21
+> **Last Updated:** 2026-05-26
 > **Engine:** Unreal Engine 5.7
-> **Source review:** `docs/architecture/architecture-review-2026-05-21.md`
+> **Source review:** `docs/architecture/architecture-review-2026-05-26.md`
 
 ## Coverage Summary
 - Total requirements: **207**
-- ✅ Covered: **115** (56%)
-- ⚠️ Partial: **24** (12%)
-- ❌ Gaps: **68** (33%)
+- ✅ Covered: **~154** (~74%)
+- ⚠️ Partial: **~24** (~12%)
+- ❌ Gaps: **~29** (~14%)
+
+Delta from 2026-05-21: +39 covered (ADR-0014/0015/0016/0017/0018 closed all Core MVP gaps). All HIGH engine
+issues fixed (HIGH-1 ADR-0008, HIGH-2 ADR-0011, HIGH-3 ADR-0010/0012/0014). All blocking conflicts
+(C1/C2/C4/C6) resolved; C5 doc residue cleaned 2026-05-26.
 
 Legend — ✅ Covered (an ADR explicitly addresses it) · ⚠️ Partial (covered ambiguously, or
 covered-but-conflicted) · ❌ Gap (no ADR). Parenthesised ADRs = cross-cutting coverage only.
@@ -99,17 +103,17 @@ covered-but-conflicted) · ❌ Gap (no ADR). Parenthesised ADRs = cross-cutting 
 ### Player Controller — design/gdd/player-controller.md
 | Req ID | Requirement (abbrev) | ADR | Status |
 |--------|----------------------|-----|--------|
-| TR-pc-001 | Thin Router; no gameplay logic on PC | ADR-0001/0003 | ✅ |
-| TR-pc-002 | Routes input via multicast delegates | ADR-0001 | ✅ |
-| TR-pc-003 | Context resolver proximity/async-trace | — | ❌ |
-| TR-pc-004 | AsyncLineTraceByChannel for context | — | ❌ |
-| TR-pc-005 | Context resolver 4Hz, scales with target count | — | ❌ |
-| TR-pc-006 | Subscribes to subsystem events; no poll | ADR-0001 | ✅ |
-| TR-pc-007 | Combat input latency <50ms | — | ❌ |
-| TR-pc-008 | Movement input latency <100ms | — | ❌ |
-| TR-pc-009 | Push/pop IMC_Stealth dual trigger | ADR-0003 | ⚠️ |
-| TR-pc-010 | Push/pop IMC_Combat on engagement | ADR-0003 | ⚠️ |
-| TR-pc-011 | FContextPrompt struct fields | — | ❌ |
+| TR-pc-001 | Thin Router; no gameplay logic on PC | ADR-0018 | ✅ |
+| TR-pc-002 | Routes input via multicast delegates | ADR-0001/0018 | ✅ |
+| TR-pc-003 | Context resolver proximity/async-trace | ADR-0018 | ✅ |
+| TR-pc-004 | AsyncLineTraceByChannel + QueryTraceData poll | ADR-0018 | ✅ |
+| TR-pc-005 | Context resolver adaptive 2–6.7Hz | ADR-0018 | ✅ |
+| TR-pc-006 | Subscribes to subsystem events; no poll | ADR-0001/0018 | ✅ |
+| TR-pc-007 | Combat input latency <50ms | ADR-0018 | ✅ |
+| TR-pc-008 | Movement input latency <100ms | ADR-0018 | ✅ |
+| TR-pc-009 | Push/pop IMC_Stealth dual trigger | ADR-0003/0017/0018 | ✅ |
+| TR-pc-010 | Push/pop IMC_Combat on engagement (Combat owns decision) | ADR-0014/0018 | ✅ |
+| TR-pc-011 | FContextPrompt struct fields | ADR-0018 | ✅ |
 
 ### Camera — design/gdd/camera-system.md
 | Req ID | Requirement (abbrev) | ADR | Status |
@@ -117,7 +121,7 @@ covered-but-conflicted) · ❌ Gap (no ADR). Parenthesised ADRs = cross-cutting 
 | TR-camera-001 | 5 camera modes via PlayerCameraManager | ADR-0009 | ✅ |
 | TR-camera-002 | SetViewTargetWithBlend EaseInOut | ADR-0009 | ✅ |
 | TR-camera-003 | Spring-arm retract (⚠ MED-5 no CameraRetractSpeed) | ADR-0009 | ✅ |
-| TR-camera-004 | Procedural shake Perlin (⚠ MED-4 class name) | ADR-0009 | ✅ |
+| TR-camera-004 | Procedural shake Perlin (MED-4 resolved 2026-05-26: UCameraShakeBase + UPerlinNoiseCameraShakePattern) | ADR-0009 | ✅ |
 | TR-camera-005 | Cinematic via Sequencer | ADR-0009 | ✅ |
 | TR-camera-006 | Lumen auto-exposure tuning | ADR-0009 | ✅ |
 | TR-camera-007 | ICameraSystem interface | ADR-0009 | ✅ |
@@ -126,14 +130,14 @@ covered-but-conflicted) · ❌ Gap (no ADR). Parenthesised ADRs = cross-cutting 
 ### Dialogue — design/gdd/dialogue-system.md
 | Req ID | Requirement (abbrev) | ADR | Status |
 |--------|----------------------|-----|--------|
-| TR-dialogue-001 | UDialogueSubsystem (⚠ C2 World tier loses persistence) | ADR-0004 | ⚠️ |
+| TR-dialogue-001 | UDialogueSubsystem (C2: World volatile + Session UNPCRelationship split) | ADR-0004 | ✅ |
 | TR-dialogue-002 | Dialogue trees in Data Tables | ADR-0005 | ✅ |
 | TR-dialogue-003 | Per-NPC Trust/Fear/Knowledge | — | ❌ |
 | TR-dialogue-004 | 5 NPC types | — | ❌ |
 | TR-dialogue-005 | Radial choice wheel input | — | ❌ |
 | TR-dialogue-006 | Melee interrupt safety override | — | ❌ |
 | TR-dialogue-007 | Camera Conversation mode blend | ADR-0009 | ✅ |
-| TR-dialogue-008 | Events + SaveDialogueState (⚠ C2 no FDialogueSaveData) | ADR-0001/0006 | ⚠️ |
+| TR-dialogue-008 | Events + SaveDialogueState (NPC rel via Session subsystem; C2 resolved) | ADR-0001/0006 | ⚠️ |
 | TR-dialogue-009 | Fear recovery rules | — | ❌ |
 
 ### Input — design/gdd/input-system.md
@@ -147,44 +151,44 @@ covered-but-conflicted) · ❌ Gap (no ADR). Parenthesised ADRs = cross-cutting 
 | TR-input-006 | Atomic context transitions | ADR-0003 | ✅ |
 | TR-input-007 | Auto-pause on focus loss | ADR-0003 | ✅ |
 | TR-input-008 | Dual-mode input when UI open | ADR-0003 | ✅ |
-| TR-input-009 | Persist rebinding profiles (⚠ C4 owner unresolved) | ADR-0003/0006 | ⚠️ |
+| TR-input-009 | Persist rebinding profiles (C4 resolved: EIUS own file; UHUDSubsystem owns UI widget) | ADR-0003/0006/0016 | ✅ |
 | TR-input-010 | Lean actions gated to Cover | ADR-0003 | ✅ |
 
 ### Health — design/gdd/health-system.md
 | Req ID | Requirement (abbrev) | ADR | Status |
 |--------|----------------------|-----|--------|
-| TR-health-001 | int32 HP pool, max 100, no overheal | — | ❌ |
-| TR-health-002 | EDamageType enum | — | ❌ |
-| TR-health-003 | TakeDamage pipeline | — | ❌ |
-| TR-health-004 | Dodge i-frames (Movement coupling) | ADR-0010/0007 | ⚠️ |
-| TR-health-005 | Death → RequestStateTransition(PlayerDied) | ADR-0002 | ✅ |
-| TR-health-006 | Health VFX budgets | — | ❌ |
-| TR-health-007 | SaveHealthState/Restore (no FHealthSaveData) | ADR-0006 | ⚠️ |
-| TR-health-008 | Healing consumable interruptibility | — | ❌ |
+| TR-health-001 | int32 HP pool, max 100, no overheal | ADR-0015 | ✅ |
+| TR-health-002 | EDamageType enum | ADR-0015 | ✅ |
+| TR-health-003 | TakeDamage 5-step pipeline | ADR-0015 | ✅ |
+| TR-health-004 | Dodge i-frames (Movement coupling) | ADR-0015/0010 | ✅ |
+| TR-health-005 | Death → RequestStateTransition(PlayerDied) | ADR-0002/0015 | ✅ |
+| TR-health-006 | Health VFX budgets | ADR-0015 | ✅ |
+| TR-health-007 | SaveHealthState/Restore (FHealthSaveData added) | ADR-0006/0015 | ✅ |
+| TR-health-008 | Healing consumable interruptibility | ADR-0015 | ✅ |
 
 ### Stealth — design/gdd/stealth-system.md
 | Req ID | Requirement (abbrev) | ADR | Status |
 |--------|----------------------|-----|--------|
-| TR-stealth-001 | Per-alien score; global = max | — | ❌ |
-| TR-stealth-002 | 5 detection states + de-escalation | — | ❌ |
-| TR-stealth-003 | IStealthDetection::GetDetectionScore | ADR-0012 | ⚠️ |
-| TR-stealth-004 | Per-alien calc budget; max 20 aliens | — | ❌ |
-| TR-stealth-005 | Stealth VFX/audio budgets | — | ❌ |
-| TR-stealth-006 | OnDetectionChanged/OnStealthBroken events | ADR-0001 | ⚠️ |
-| TR-stealth-007 | Reads Movement/Physics/Scene/Camera/Health per frame | — | ❌ |
+| TR-stealth-001 | Per-alien score; global = max | ADR-0017 | ✅ |
+| TR-stealth-002 | 5 detection states + de-escalation cooldowns | ADR-0017 | ✅ |
+| TR-stealth-003 | IStealthDetection::GetDetectionScore + ComputeAndGetAlienScore | ADR-0012/0017 | ✅ |
+| TR-stealth-004 | Per-alien calc budget; max 20 aliens | ADR-0017 | ✅ |
+| TR-stealth-005 | Stealth VFX/audio budgets | ADR-0017 | ✅ |
+| TR-stealth-006 | OnDetectionChanged/OnStealthBroken events | ADR-0001/0017 | ✅ |
+| TR-stealth-007 | Reads Movement/Physics/Scene/Camera/Health via event cache + 4Hz refresh | ADR-0017 | ✅ |
 
 ### Combat — design/gdd/combat-system.md
 | Req ID | Requirement (abbrev) | ADR | Status |
 |--------|----------------------|-----|--------|
-| TR-combat-001 | 4 weapon classes | — | ❌ |
-| TR-combat-002 | Hitscan player / projectile alien | ADR-0012 | ⚠️ |
-| TR-combat-003 | Damage formula multipliers | — | ❌ |
-| TR-combat-004 | Weapon condition + jam chance | — | ❌ |
-| TR-combat-005 | Combat lifecycle + disengage timer | — | ❌ |
-| TR-combat-006 | Combat owns IMC_Combat pop; FOV narrow | — | ❌ |
-| TR-combat-007 | Reload refund on interrupt | — | ❌ |
-| TR-combat-008 | Combat VFX budgets | — | ❌ |
-| TR-combat-009 | OnCombatEngaged/Disengaged; AddRecoil→Camera | ADR-0001/0009 | ⚠️ |
+| TR-combat-001 | 4 weapon classes | ADR-0014 | ✅ |
+| TR-combat-002 | Hitscan player / projectile alien | ADR-0014/0012 | ✅ |
+| TR-combat-003 | Damage formula multipliers (Formula 1) | ADR-0014 | ✅ |
+| TR-combat-004 | Weapon condition + jam chance | ADR-0014 | ✅ |
+| TR-combat-005 | Combat lifecycle + disengage timer (Formula 3, =100 model) | ADR-0014 | ✅ |
+| TR-combat-006 | Combat owns IMC_Combat pop; FOV narrow | ADR-0014 | ✅ |
+| TR-combat-007 | Reload refund on interrupt | ADR-0014 | ✅ |
+| TR-combat-008 | Combat VFX budgets | ADR-0014 | ✅ |
+| TR-combat-009 | OnCombatEngaged/Disengaged; AddRecoil→Camera | ADR-0001/0009/0014 | ✅ |
 
 ### Alien AI — design/gdd/alien-ai-system.md
 | Req ID | Requirement (abbrev) | ADR | Status |
@@ -211,21 +215,21 @@ covered-but-conflicted) · ❌ Gap (no ADR). Parenthesised ADRs = cross-cutting 
 | TR-investigation-004 | Thread states + deferred revelation | — | ❌ |
 | TR-investigation-005 | Gaze-hold observation + stealth gate | — | ❌ |
 | TR-investigation-006 | Revelation deferral poll | — | ❌ |
-| TR-investigation-007 | SaveInvestigationState (no sub-struct) | ADR-0006 | ⚠️ |
+| TR-investigation-007 | SaveInvestigationState (FInvestigationSaveData added) | ADR-0006 | ✅ |
 | TR-investigation-008 | OnClueDiscovered/etc events | ADR-0001 | ✅ |
 
 ### HUD — design/gdd/hud-system.md
 | Req ID | Requirement (abbrev) | ADR | Status |
 |--------|----------------------|-----|--------|
-| TR-hud-001 | Two HUD modes; queued mode change | — | ❌ |
-| TR-hud-002 | Two rendering pipelines + shared data layer | — | ❌ |
-| TR-hud-003 | UHUDSubsystem (Player tier) subscriptions | ADR-0004 | ✅ |
-| TR-hud-004 | Tactical HUD frame budget | — | ❌ |
-| TR-hud-005 | UMG widgets; resolution support | — | ❌ |
-| TR-hud-006 | Minimap circular params | — | ❌ |
-| TR-hud-007 | Accessibility hooks | — | ❌ |
-| TR-hud-008 | HUD visibility per camera mode | ADR-0009 | ⚠️ |
-| TR-hud-009 | Context prompts shared, max 2 | — | ❌ |
+| TR-hud-001 | Two HUD modes; queued mode change | ADR-0016 | ✅ |
+| TR-hud-002 | Two rendering pipelines + shared data layer (FHUDDataCache) | ADR-0016 | ✅ |
+| TR-hud-003 | UHUDSubsystem (ULocalPlayerSubsystem) subscriptions | ADR-0004/0016 | ✅ |
+| TR-hud-004 | Tactical HUD frame budget <0.5ms | ADR-0016 | ✅ |
+| TR-hud-005 | UMG widgets; resolution support | ADR-0016 | ✅ |
+| TR-hud-006 | Minimap OnPaint at 0.5s/10s rates | ADR-0016 | ✅ |
+| TR-hud-007 | Accessibility hooks (scale/colorblind/contrast) | ADR-0016 | ✅ |
+| TR-hud-008 | HUD visibility per camera mode | ADR-0009/0016 | ✅ |
+| TR-hud-009 | Context prompts shared, max 2; PC owns lifecycle | ADR-0016/0018 | ✅ |
 
 ### Inventory — design/gdd/inventory-system.md
 | Req ID | Requirement (abbrev) | ADR | Status |
@@ -269,7 +273,7 @@ covered-but-conflicted) · ❌ Gap (no ADR). Parenthesised ADRs = cross-cutting 
 | TR-crafting-003 | Recipes in Data Tables; atomic consume | ADR-0005 | ✅ |
 | TR-crafting-004 | Channel timings/interruptibility | — | ❌ |
 | TR-crafting-005 | Inventory-full blocks + refunds | — | ❌ |
-| TR-crafting-006 | SaveCraftingState (no FCraftingSaveData) | ADR-0006 | ⚠️ |
+| TR-crafting-006 | SaveCraftingState (FCraftingSaveData added) | ADR-0006 | ✅ |
 
 ### Map — design/gdd/map-system.md
 | Req ID | Requirement (abbrev) | ADR | Status |
@@ -279,7 +283,7 @@ covered-but-conflicted) · ❌ Gap (no ADR). Parenthesised ADRs = cross-cutting 
 | TR-map-003 | Auto location pinning | — | ❌ |
 | TR-map-004 | Manual marker cap 10 | — | ❌ |
 | TR-map-005 | No fast travel at MVP | — | ❌ |
-| TR-map-006 | SaveMapState (no FMapSaveData) | ADR-0006 | ⚠️ |
+| TR-map-006 | SaveMapState (FMapSaveData added) | ADR-0006 | ✅ |
 | TR-map-007 | Fog reveal per frame in Playing | — | ❌ |
 
 ### Save/Load — design/gdd/save-load-system.md
@@ -292,7 +296,7 @@ covered-but-conflicted) · ❌ Gap (no ADR). Parenthesised ADRs = cross-cutting 
 | TR-save-005 | Corruption handling | ADR-0006 | ✅ |
 | TR-save-006 | Save indicator UMG (HUD dep) | ADR-0006 | ⚠️ |
 | TR-save-007 | Save/Load mutually exclusive | ADR-0006 | ✅ |
-| TR-save-008 | Payload completeness (⚠ C1 6 payloads missing) | ADR-0006 | ⚠️ |
+| TR-save-008 | Payload completeness (C1 resolved: 12 IHostileSaveProvider registrants) | ADR-0006 | ✅ |
 | TR-save-009 | Clean-exit blocking write | ADR-0006 | ✅ |
 | TR-save-010 | Checkpoint cooldown 30s | ADR-0006 | ✅ |
 | TR-save-011 | Storage-full handling | ADR-0006 | ✅ |
@@ -305,7 +309,7 @@ covered-but-conflicted) · ❌ Gap (no ADR). Parenthesised ADRs = cross-cutting 
 | TR-tutorial-003 | 5 hint states transition table | — | ❌ |
 | TR-tutorial-004 | World-space callout via UWidgetComponent | — | ❌ |
 | TR-tutorial-005 | Subscribe GSM OnStateEntered/Exited | ADR-0001/0002 | ✅ |
-| TR-tutorial-006 | Persist FTutorialSaveData (⚠ C5 stale DismissedHintIDs) | ADR-0006 | ⚠️ |
+| TR-tutorial-006 | Persist FTutorialSaveData.CompletedHintIDs (C5 resolved: DISMISSED removed) | ADR-0006 | ✅ |
 | TR-tutorial-007 | Observe IMC_Default; never consume input | — | ❌ |
 | TR-tutorial-008 | bTutorialEnabled global toggle | — | ❌ |
 | TR-tutorial-009 | Max 2 active hints; priority formula | — | ❌ |
@@ -316,29 +320,31 @@ covered-but-conflicted) · ❌ Gap (no ADR). Parenthesised ADRs = cross-cutting 
 
 ## Known Gaps — Suggested ADRs
 
-| Priority | System | Gaps | Suggested ADR |
-|----------|--------|------|---------------|
-| 1 | Combat | 7 | `/architecture-decision Combat System` |
-| 2 | HUD | 7 | `/architecture-decision HUD System` |
-| 3 | Stealth | 5 | `/architecture-decision Stealth System` |
-| 4 | Health | 5 | `/architecture-decision Health System` |
-| 5 | Player Controller | 6 | `/architecture-decision Player Controller` |
-| 6 | Tutorial | 8 | ADR or cross-cutting sign-off |
-| 6 | Dialogue | 5 | ADR or cross-cutting sign-off |
-| 6 | Inventory | 5 | ADR or cross-cutting sign-off |
-| 6 | Map | 5 | ADR or cross-cutting sign-off |
-| 6 | Investigation | 4 | ADR or cross-cutting sign-off |
-| 6 | Faction | 4 | ADR or cross-cutting sign-off |
-| 6 | Crafting | 4 | ADR or cross-cutting sign-off |
-| 6 | Quest | 3 | ADR or cross-cutting sign-off |
+All Core MVP system gaps closed by ADR-0014 (Combat), ADR-0015 (Health), ADR-0016 (HUD),
+ADR-0017 (Stealth), ADR-0018 (Player Controller). Remaining gaps are Feature/VS-tier
+systems partially covered by cross-cutting ADRs (0001 events, 0004 subsystems, 0005 data,
+0006 save):
+
+| Priority | System | Gaps | Suggested action |
+|----------|--------|-----:|------------------|
+| 1 | Tutorial | 8 | ADR or cross-cutting sign-off |
+| 1 | Dialogue | 5 | ADR (NPC relationship behavioural rules) or sign-off |
+| 1 | Inventory | 5 | ADR (grid/category/quick-slot rules) or sign-off |
+| 1 | Map | 5 | ADR (fog/pinning rules) or sign-off |
+| 1 | Investigation | 4 | ADR (clue/thread mechanics) or sign-off |
+| 1 | Faction | 4 | ADR (rep/standing/ripple rules) or sign-off |
+| 1 | Crafting | 4 | ADR (channel/refund rules) or sign-off |
+| 1 | Quest | 3 | ADR (continuous/deferred mechanics) or sign-off |
 
 ## Superseded / Pending-Revision Requirements
-- **TR-infection-001** — text says `UGameInstanceSubsystem`; ADR-0013 establishes
-  `UWorldSubsystem`. Pending C6 resolution, then revise registry wording (do not renumber).
+- **TR-infection-001** — text says `UGameInstanceSubsystem`; C6 resolved 2026-05-24 in
+  favor of `UWorldSubsystem` (ADR-0013). Registry text revision pending (do not renumber).
+- **TR-combat-005 / TR-pc-010** — revised 2026-05-21 to canonical =100 combat-state model.
 
 ## History
 | Date | Covered % | Notes |
-|------|-----------|-------|
+|------|----------:|-------|
 | 2026-05-20 (AM) | ~28% | 4 ADRs accepted, 7 proposed, 5 missing |
 | 2026-05-20 (14:20) | ~50% | Foundation ADRs 0007–0011 added |
 | 2026-05-21 | 56% | ADR-0012/0013 added; C6 surfaced; full 207-row matrix |
+| 2026-05-26 | ~74% | ADR-0014/0015/0016/0017/0018 added; all Core MVP gaps closed; all HIGH engine fixes confirmed; C1/C2/C4/C5/C6 resolved |

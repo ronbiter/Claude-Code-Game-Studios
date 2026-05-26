@@ -14,8 +14,8 @@ Proposed
 | **Domain** | Camera (APlayerCameraManager, UCameraShakeBase, USpringArmComponent, Sequencer) |
 | **Knowledge Risk** | MEDIUM — Camera core API (APlayerCameraManager, UCameraShakeBase, USpringArmComponent) has been stable since UE 4.26. Post-5.3 changes to UCameraMode (Lyra pattern) exist but are not used here. |
 | **References Consulted** | `docs/engine-reference/unreal/VERSION.md`, `design/gdd/camera-system.md` |
-| **Post-Cutoff APIs Used** | None confirmed post-cutoff. All APIs (APlayerCameraManager, UCameraShakeBase, USpringArmComponent, ULevelSequencePlayer, SetViewTargetWithBlend) were stable pre-5.4. |
-| **Verification Required** | (1) Confirm the exact UCameraShakeBase procedural subclass name in UE 5.7 — check `Engine/Source/Runtime/Engine/Classes/Camera/` for `UPerlinNoiseCameraShake`, `UWaveOscillatorCameraShake`, or `UCameraShakePattern` subclasses. `UMatineeCameraShake` is deprecated. (2) Confirm `APlayerCameraManager::StartCameraShake()` signature unchanged in 5.7. (3) Verify `SetViewTargetWithBlend` with `VTBlend_EaseInOut` does not require a custom curve asset in 5.7. (4) Confirm ULevelSequencePlayer delegation pattern for Cinematic mode — engine does not automatically restore camera on sequence end in all configurations. (5) Confirm `USpringArmComponent` does NOT have a native `CameraRetractSpeed` property — arm retract must be implemented as TargetArmLength FInterpTo in UpdateViewTarget(). (6) Confirm `CameraLagMaxDistance` property name unchanged in 5.4–5.7. |
+| **Post-Cutoff APIs Used** | `UCameraShakeBase` + `UCameraShakePattern` composition model (UE 5.0+ — replaces legacy `UMatineeCameraShake` and the legacy `UPerlinNoiseCameraShake` direct-subclass approach). Procedural noise is supplied via `RootShakePattern = UPerlinNoiseCameraShakePattern`. All other APIs (APlayerCameraManager, USpringArmComponent, ULevelSequencePlayer, SetViewTargetWithBlend) stable pre-5.4. |
+| **Verification Required** | (1) ~~Confirm shake subclass name~~ ✅ **Resolved 2026-05-26 (MED-4 fix)**: UE5 production pattern is `UCameraShakeBase` with `RootShakePattern` set to a `UCameraShakePattern` subclass (`UPerlinNoiseCameraShakePattern` for procedural, `UWaveOscillatorCameraShakePattern` for periodic). Legacy `UPerlinNoiseCameraShake` is removed; legacy `UMatineeCameraShake` is deprecated. (2) Confirm `APlayerCameraManager::StartCameraShake()` signature unchanged in 5.7. (3) Verify `SetViewTargetWithBlend` with `VTBlend_EaseInOut` does not require a custom curve asset in 5.7. (4) Confirm ULevelSequencePlayer delegation pattern for Cinematic mode — engine does not automatically restore camera on sequence end in all configurations. (5) Confirm `USpringArmComponent` does NOT have a native `CameraRetractSpeed` property — arm retract must be implemented as TargetArmLength FInterpTo in UpdateViewTarget(). (6) Confirm `CameraLagMaxDistance` property name unchanged in 5.4–5.7. |
 
 ## ADR Dependencies
 
@@ -35,7 +35,7 @@ The camera system must support 5 distinct camera modes (ThirdPerson, FirstPerson
 ### Constraints
 
 - APlayerCameraManager is the engine-managed camera system component on APlayerController — it is the natural owner for all camera logic in UE5
-- UCameraShakeBase (UPerlinNoiseCameraShake) is the production shake class in UE5 — UMatineeCameraShake is deprecated
+- `UCameraShakeBase` with `RootShakePattern = UPerlinNoiseCameraShakePattern` is the production shake pattern in UE5 — both legacy `UPerlinNoiseCameraShake` (direct-subclass) and `UMatineeCameraShake` are removed/deprecated
 - GDD requires shake stacking with a hard cap: 25px positional amplitude, 15° rotation (TR-camera-008)
 - Cinematic mode delegates camera control to ULevelSequencePlayer (TR-camera-005)
 - Recoil is a separate system from shakes — it is a decaying rotation offset (TR-camera-009 implied by TR-camera-007 AddRecoil interface)
@@ -46,7 +46,7 @@ The camera system must support 5 distinct camera modes (ThirdPerson, FirstPerson
 - 5 camera modes with mode-switching via APlayerCameraManager (TR-camera-001)
 - Mode transitions via SetViewTargetWithBlend with EaseInOut curve (TR-camera-002)
 - Spring-arm ProbeChannel=ECC_Camera; retract speed 500cm/s; min arm length 50cm (TR-camera-003)
-- Procedural shakes via UCameraShakeBase (Perlin noise); positional for impacts, rotational for terraform (TR-camera-004)
+- Procedural shakes via `UCameraShakeBase` + `RootShakePattern = UPerlinNoiseCameraShakePattern`; positional for impacts, rotational for terraform (TR-camera-004)
 - Cinematic mode via Sequencer / ULevelSequencePlayer (TR-camera-005)
 - Lumen auto-exposure tuned per zone — snow glare vs. dark interior (TR-camera-006)
 - Expose ICameraSystem: mode management, parameter queries, AddShake, AddRecoil, SubscribeToModeChanged (TR-camera-007)
@@ -72,7 +72,7 @@ The camera system must support 5 distinct camera modes (ThirdPerson, FirstPerson
 - Min arm length 50cm (`bDoCollisionTest = true` clamps to this minimum)
 - Retract speed 500cm/s via `CameraRetractSpeed` UPROPERTY on USpringArmComponent (if available in 5.7) or via `TargetArmLength` interpolation in UpdateViewTarget()
 
-**Shake system**: UCameraShakeBase subclasses (class name verified against UE 5.7 source — see Verification Required item 1; `UPerlinNoiseCameraShake` or equivalent procedural subclass) started via `APlayerCameraManager::StartCameraShake()`. Shake instances managed by APlayerCameraManager's built-in shake system. Stacking cap (25px/15°) enforced by `AHostileWorldPlayerCameraManager::AddShake()` — checks current aggregate amplitude/rotation before starting a new shake and clamps the Scale parameter to stay within budget. Amplitude/rotation are tracked per active shake instance via a `TArray<FActiveShakeRecord>` on the camera manager.
+**Shake system**: Per-shake assets are Blueprint subclasses of `UCameraShakeBase` with `RootShakePattern` set to a `UCameraShakePattern` subclass — `UPerlinNoiseCameraShakePattern` for our procedural impact/terraform shakes (UE 5.0+ composition model; replaces the legacy `UPerlinNoiseCameraShake` direct-subclass and the deprecated `UMatineeCameraShake`). Started via `APlayerCameraManager::StartCameraShake(TSubclassOf<UCameraShakeBase>, Scale)`. Shake instances managed by APlayerCameraManager's built-in shake system. Stacking cap (25px/15°) enforced by `AHostileWorldPlayerCameraManager::AddShake()` — checks current aggregate amplitude/rotation before starting a new shake and clamps the Scale parameter to stay within budget. Amplitude/rotation are tracked per active shake instance via a `TArray<FActiveShakeRecord>` on the camera manager.
 
 **Recoil** is a separate rotation offset from shakes. `AddRecoil(float Pitch, float Yaw)` accumulates into `FVector2D RecoilOffset`. In `UpdateViewTarget()`, RecoilOffset is applied to the output rotation and decays via FInterpTo toward zero (decay rate tuning knob). Recoil does NOT go through the shake system — it is a persistent directional offset, not noise.
 
@@ -235,7 +235,7 @@ private:
 
 ### Positive
 - APlayerCameraManager is the engine's designated camera owner — no friction against engine camera pipeline
-- UCameraShakeBase (UPerlinNoiseCameraShake) is the production procedural shake class — no deprecated APIs
+- `UCameraShakeBase` with `RootShakePattern = UPerlinNoiseCameraShakePattern` is the production procedural shake pattern — no deprecated APIs (legacy `UPerlinNoiseCameraShake` / `UMatineeCameraShake` not used)
 - Shake cap enforcement in AddShake() is a single chokepoint — guaranteed cap compliance
 - Recoil as a separate system from shakes means the two can be tuned independently
 - Cinematic mode delegation to ULevelSequencePlayer requires no custom camera actors
@@ -250,7 +250,7 @@ private:
 
 | Risk | Severity | Mitigation |
 |------|----------|------------|
-| UCameraShakeBase procedural subclass name unknown in 5.7 | MEDIUM | Verify Verification Required item (1) before first shake story. All shake calls go through AddShake() — rename is localized to one header. |
+| ~~UCameraShakeBase procedural subclass name unknown in 5.7~~ | MEDIUM (RESOLVED 2026-05-26) | ✅ MED-4 fix applied: UE5 production pattern is `UCameraShakeBase` + `RootShakePattern = UPerlinNoiseCameraShakePattern` (composition, not subclass). Legacy `UPerlinNoiseCameraShake` removed in UE 5.0. All shake calls go through `AddShake(TSubclassOf<UCameraShakeBase>)`. |
 | UpdateViewTarget() Cinematic suppression may corrupt blend state if Super:: call skipped | MEDIUM (FIXED) | On Cinematic exit, call Super::UpdateViewTarget() to restore engine-side blend state before re-enabling custom logic. Document in implementation guide. |
 | Aggregate shake amplitude tracking — engine does not expose this natively | MEDIUM | AHostileWorldPlayerCameraManager tracks amplitude per-shake via TArray of active shake records. Scale clamping at AddShake() call site is sufficient for cap enforcement. |
 | Cinematic mode — ULevelSequencePlayer may not restore camera automatically on sequence end | HIGH | Sequence actors must call SetCameraMode(ThirdPerson) explicitly in their end event. Document as authoring requirement. Alternative: override APlayerCameraManager::OnCinematicModeUpdated() if available. |
@@ -265,7 +265,7 @@ private:
 | camera-system.md | TR-camera-001: 5 modes via APlayerCameraManager | Decided: AHostileWorldPlayerCameraManager (APlayerCameraManager subclass) with EHostileCameraMode enum; per-mode UpdateViewTarget() dispatch |
 | camera-system.md | TR-camera-002: SetViewTargetWithBlend EaseInOut | Decided: SetViewTargetWithBlend(Target, BlendTime, VTBlend_EaseInOut, BlendExp); BlendTime and BlendExp are tuning knobs |
 | camera-system.md | TR-camera-003: Spring arm ProbeChannel=ECC_Camera, 500cm/s retract, 50cm min | Decided: USpringArmComponent on AHostileCharacter; ProbeChannel=ECC_Camera; min arm=50cm via ClampedDistance; retract speed 500cm/s via CameraRetractSpeed or TargetArmLength interpolation |
-| camera-system.md | TR-camera-004: UCameraShakeBase Perlin noise; positional/rotational variants | Decided: UPerlinNoiseCameraShake subclasses for impacts (positional) and terraform/zone events (rotational); started via AddShake() |
+| camera-system.md | TR-camera-004: UCameraShakeBase Perlin noise; positional/rotational variants | Decided: Blueprint subclasses of `UCameraShakeBase` with `RootShakePattern = UPerlinNoiseCameraShakePattern` (composition model, UE 5.0+) — positional pattern for impacts, rotational pattern for terraform/zone events; started via `AddShake(TSubclassOf<UCameraShakeBase>, Scale)` |
 | camera-system.md | TR-camera-005: Cinematic mode via Sequencer | Decided: bCinematicActive flag suppresses UpdateViewTarget() custom logic; ULevelSequencePlayer drives camera transforms; sequence authors must call SetCameraMode() on end |
 | camera-system.md | TR-camera-006: Lumen auto-exposure per zone | Decided: NOT in camera system — PostProcessVolume actors per zone handle exposure. Camera system exposes GetCameraMode() for any post-process conditional logic. |
 | camera-system.md | TR-camera-007: ICameraSystem interface | Decided: ICameraSystem C++ abstract interface with 5 methods; implemented by AHostileWorldPlayerCameraManager; all callers use interface pointer |

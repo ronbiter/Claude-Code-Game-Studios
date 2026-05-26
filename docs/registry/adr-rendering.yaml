@@ -1,9 +1,9 @@
 # Domain: rendering | Load this file only when working on rendering architecture decisions.
 #
 # Covers: physics, collision, scene streaming, camera, animation, World Partition,
-# Data Layers, Chaos Physics, IK, Linked Anim Layers.
+# Data Layers, Chaos Physics, IK, Linked Anim Layers, HUD/UI.
 #
-# ADRs in this domain: ADR-0007, ADR-0008, ADR-0009, ADR-0011
+# ADRs in this domain: ADR-0007, ADR-0008, ADR-0009, ADR-0011, ADR-0016
 # Note: Physics (ADR-0007) and Scene Streaming (ADR-0008) are classified here as
 # the closest fit. Create adr-physics.yaml and adr-streaming.yaml if these grow.
 
@@ -29,7 +29,7 @@ state_ownership:
     owner_system: USceneManagementSubsystem
     adr: docs/architecture/adr-0008-scene-streaming-architecture.md
     interface: "GetCurrentZone() → FName (read-only); GetZoneState(FName) → FZoneState (read-only); RequestDataLayerSwap(FName ZoneId, FName TargetLayer) — only valid Data Layer write path; GetStreamingState() → FStreamingState (read-only)"
-    write_access: USceneManagementSubsystem-only (UInfectionSpreadSubsystem and others call RequestDataLayerSwap via ISceneManagementSubsystem interface; no system may call UDataLayerSubsystem directly)
+    write_access: USceneManagementSubsystem-only (UInfectionSpreadSubsystem and others call RequestDataLayerSwap via ISceneManagementSubsystem interface; no system may call UDataLayerManager directly)
     referenced_by:
       - docs/architecture/adr-0008-scene-streaming-architecture.md
     added: "2026-05-20"
@@ -44,6 +44,17 @@ state_ownership:
     referenced_by:
       - docs/architecture/adr-0009-camera-architecture.md
     added: "2026-05-20"
+    revised: ""
+
+  - state: hud_mode_state
+    status: active
+    owner_system: UHUDSubsystem
+    adr: docs/architecture/adr-0016-hud-system-architecture.md
+    interface: "GetHUDMode() → EHUDMode (read-only); RequestModeChange(EHUDMode) — only valid mode-write path (queued if bIsInCombat; applied on combat end); GetDataCache() → const FHUDDataCache& (read-only, for initial widget population in BindDelegates() only)"
+    write_access: UHUDSubsystem-only (RequestModeChange queues change; no system may set EHUDMode directly)
+    referenced_by:
+      - docs/architecture/adr-0016-hud-system-architecture.md
+    added: "2026-05-25"
     revised: ""
 
 # ─── INTERFACE CONTRACTS ──────────────────────────────────────────────────────
@@ -97,13 +108,42 @@ interfaces:
     description: "AHostileWorldPlayerCameraManager broadcasts OnCameraModeChanged(EHostileCameraMode OldMode, EHostileCameraMode NewMode) on every mode transition. Consumers bind via OnCameraModeChanged.AddDynamic() in BeginPlay(); RemoveDynamic() in EndPlay()."
     producer: AHostileWorldPlayerCameraManager (fired in SetCameraMode() after mode enum update)
     consumers:
-      - HUD System (mode-based widget visibility)
+      - UHUDSubsystem (world-scoped subscription; forwards as OnHUDCameraModeChanged to active widget — widgets must NOT bind camera manager directly per forbidden_pattern: direct_widget_to_camera_manager_binding)
       - Stealth System (FOV reads camera mode)
       - Combat System (65° FOV on engage; recoil routing)
     adr: docs/architecture/adr-0009-camera-architecture.md
     referenced_by:
       - docs/architecture/adr-0009-camera-architecture.md
+      - docs/architecture/adr-0016-hud-system-architecture.md
     added: "2026-05-20"
+    revised: "2026-05-25"
+
+  - contract: hud_widget_activate_deactivate
+    status: active
+    pattern: direct_call
+    description: "UHUDSubsystem manages HUD widget lifecycle via explicit ActivateWidget(Widget) / DeactivateWidget(Widget) calls. ActivateWidget: calls Widget->AddToViewport(ZOrder=0), then Widget->BindDelegates(this), then widget reads FHUDDataCache for initial state. DeactivateWidget: calls Widget->UnbindDelegates(this), then Widget->RemoveFromParent(). NativeConstruct() sets CachedHUDSubsystem reference only — no delegate binding. NativeDestruct() is not relied on for cleanup."
+    producer: UHUDSubsystem (calls Activate/Deactivate on mode switch and Initialize/Deinitialize)
+    consumers:
+      - UHUDWidget_Immersive
+      - UHUDWidget_Tactical
+    adr: docs/architecture/adr-0016-hud-system-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0016-hud-system-architecture.md
+    added: "2026-05-25"
+    revised: ""
+
+  - contract: hud_context_prompt_interface
+    status: active
+    pattern: direct_call
+    description: "Systems that need to show context prompts (Player Controller, Tutorial System, Quest System) call UHUDSubsystem::RegisterContextPrompt(FContextPrompt) to register a prompt and receive an FContextPromptId handle. Call ClearContextPrompt(Id) to remove. UHUDSubsystem applies Formula 2 priority scoring and forwards the winning prompt(s) via OnHUDContextPrompt delegate. Max 2 simultaneous prompts (1 primary + 1 secondary per hud-system.md Rule 5)."
+    producer: AHostileWorldPlayerController, UTutorialSubsystem (call RegisterContextPrompt / ClearContextPrompt)
+    consumers:
+      - UHUDWidget_Immersive (context prompts are the only persistent Immersive-mode element)
+      - UHUDWidget_Tactical
+    adr: docs/architecture/adr-0016-hud-system-architecture.md
+    referenced_by:
+      - docs/architecture/adr-0016-hud-system-architecture.md
+    added: "2026-05-25"
     revised: ""
 
   - contract: movement_to_anim_state_push
@@ -134,7 +174,13 @@ interfaces:
 
 # ─── PERFORMANCE BUDGETS ──────────────────────────────────────────────────────
 
-performance_budgets: []
+performance_budgets:
+  - system: hud_system
+    status: active
+    budget: "Tactical HUD full render: < 0.5ms/frame at 60fps. Minimap update pass: < 0.2ms per 0.5s update. Inactive widget (off-viewport + unbound): 0ms render, 0ms CPU."
+    measurement: "stat slate in PIE with full Tactical HUD active; minimap with 10 threat dots and infection heatmap visible"
+    adr: docs/architecture/adr-0016-hud-system-architecture.md
+    added: "2026-05-25"
 
 # ─── API DECISIONS ───────────────────────────────────────────────────────────
 
@@ -175,7 +221,7 @@ api_decisions:
   - purpose: data_layer_activation
     status: active
     api: "USceneManagementSubsystem::RequestDataLayerSwap(FName ZoneId, FName TargetLayer) — the only valid path for Data Layer activation/deactivation at runtime"
-    not: "Direct UDataLayerSubsystem::SetDataLayerInstanceRuntimeState() calls from any system other than USceneManagementSubsystem"
+    not: "Direct UDataLayerManager::SetDataLayerInstanceRuntimeState() calls from any system other than USceneManagementSubsystem (note: UDataLayerSubsystem does not exist in UE 5.7 — UDataLayerManager is the correct class)"
     adr: docs/architecture/adr-0008-scene-streaming-architecture.md
     reason: "Centralizing Data Layer writes enforces the DL swap state machine (rollback, queue, 3s debounce). Direct calls bypass rollback and produce inconsistent world state."
     referenced_by:
@@ -216,6 +262,17 @@ api_decisions:
     added: "2026-05-20"
     revised: ""
 
+  - purpose: hud_widget_technology
+    status: active
+    api: "UMG (UUserWidget subclasses: UHUDWidget_Immersive, UHUDWidget_Tactical) managed by UHUDSubsystem (ULocalPlayerSubsystem). Minimap uses UUserWidget::OnPaint() override with FPaintContext draw calls — not UCanvasPanel."
+    not: "AHUD::DrawHUD() canvas-draw HUD (legacy pattern, world-scoped actor lifecycle); UCanvasPanel for minimap rendering (layout widget, not a drawing surface); single monolithic widget tree with conditional visibility for both modes"
+    adr: docs/architecture/adr-0016-hud-system-architecture.md
+    reason: "ULocalPlayerSubsystem survives level transitions (ADR-0004). Dual widget classes enforce the GDD's two-independent-pipeline design. UCanvasPanel is a layout container — OnPaint() override is the correct custom-draw path in UMG."
+    referenced_by:
+      - docs/architecture/adr-0016-hud-system-architecture.md
+    added: "2026-05-25"
+    revised: ""
+
 # ─── FORBIDDEN PATTERNS ──────────────────────────────────────────────────────
 
 forbidden_patterns:
@@ -249,7 +306,7 @@ forbidden_patterns:
 
   - pattern: direct_data_layer_write
     status: active
-    description: "No subsystem may call UDataLayerSubsystem::SetDataLayerInstanceRuntimeState() directly. All Data Layer activation must go through USceneManagementSubsystem::RequestDataLayerSwap()."
+    description: "No subsystem may call UDataLayerManager::SetDataLayerInstanceRuntimeState() directly (note: UDataLayerSubsystem does not exist in UE 5.7; correct class is UDataLayerManager via GetWorld()->GetDataLayerManager()). All Data Layer activation must go through USceneManagementSubsystem::RequestDataLayerSwap()."
     why: "Direct Data Layer writes bypass the DL_Idle→Active state machine, skip rollback logic, ignore the swap queue, and bypass the 3.0s debounce. This leaves the world in an inconsistent partial state."
     adr: docs/architecture/adr-0008-scene-streaming-architecture.md
     added: "2026-05-20"
@@ -267,3 +324,24 @@ forbidden_patterns:
     why: "Direct Montage_Play() calls bypass the UHostileWorldAnimInstance abstraction, create direct coupling between callers and ABP internals, and prevent the animation system from managing slot priority, blend weight, and montage state coherently."
     adr: docs/architecture/adr-0011-animation-architecture.md
     added: "2026-05-20"
+
+  - pattern: direct_widget_to_subsystem_polling
+    status: active
+    description: "HUD widgets (UHUDWidget_Immersive, UHUDWidget_Tactical) must not call into any upstream subsystem (UHealthComponent, UCombatComponent, UStealthComponent, etc.) from NativeTick() or any per-frame path to detect state changes. All HUD state updates arrive via UHUDSubsystem forwarded multicast delegates bound in BindDelegates(). Widgets may call GetDataCache() once in BindDelegates() for initial state population only."
+    why: "Per-frame polling of subsystem state violates polling_state_in_tick (ADR-0001). HUD widgets have 10 upstream sources — polling each from tick would generate O(n) per-frame subsystem reads and silently break when a source subsystem is unavailable during level transition."
+    adr: docs/architecture/adr-0016-hud-system-architecture.md
+    added: "2026-05-25"
+
+  - pattern: direct_widget_to_camera_manager_binding
+    status: active
+    description: "HUD widgets must not bind delegates directly to AHostileWorldPlayerCameraManager::OnCameraModeChanged. All camera mode change notifications arrive via UHUDSubsystem::OnHUDCameraModeChanged (forwarded from UHUDSubsystem's world-scoped subscription). No widget may hold a reference to AHostileWorldPlayerCameraManager."
+    why: "AHostileWorldPlayerCameraManager is a world-scoped actor destroyed on level transition. Direct widget-to-camera-manager bindings become dangling delegates after transition. Routing through UHUDSubsystem (which manages BindWorldSystems/UnbindWorldSystems) is the only safe path."
+    adr: docs/architecture/adr-0016-hud-system-architecture.md
+    added: "2026-05-25"
+
+  - pattern: hud_widget_native_construct_delegate_bind
+    status: active
+    description: "HUD widgets must not bind or unbind UHUDSubsystem forwarded delegates in NativeConstruct() or NativeDestruct(). Delegate binding is managed exclusively by UHUDSubsystem calling Widget->BindDelegates(this) in ActivateWidget() and Widget->UnbindDelegates(this) in DeactivateWidget(). NativeConstruct() is used only to null-guard the CachedHUDSubsystem reference."
+    why: "NativeDestruct() is not guaranteed to fire when RemoveFromParent() is called if the widget is still referenced. Relying on NativeDestruct() for delegate cleanup creates stale UObject* entries in the subsystem's delegate list, which produce crashes when the subsystem next broadcasts."
+    adr: docs/architecture/adr-0016-hud-system-architecture.md
+    added: "2026-05-25"

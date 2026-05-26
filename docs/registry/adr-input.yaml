@@ -5,8 +5,8 @@
 #
 # ADRs in this domain: ADR-0003
 
-version: 1
-last_updated: "2026-05-20"
+version: 2
+last_updated: "2026-05-26"
 
 # ─── STATE OWNERSHIP ─────────────────────────────────────────────────────────
 
@@ -20,6 +20,41 @@ state_ownership:
     referenced_by:
       - docs/architecture/adr-0003-enhanced-input-architecture.md
     added: "2026-05-19"
+    revised: ""
+
+  - state: rebinding_ui_owner
+    status: active
+    owner_system: UHUDSubsystem (ULocalPlayerSubsystem, ADR-0016)
+    adr: docs/architecture/adr-0016-hud-system-architecture.md
+    interface: "UWidget_KeyBindingsMenu — Settings-menu key-capture widget. Captures FKey from player, calls AHostileWorldPlayerController::ApplyKeyRebind(MappingName, NewKey) + SaveRebindings() (ADR-0003 BlueprintCallable API). Widget never touches UEnhancedInputUserSettings directly."
+    write_access: UHUDSubsystem-only (widget construction/lifecycle); operation delegated to PC via ADR-0003 API
+    referenced_by:
+      - docs/architecture/adr-0003-enhanced-input-architecture.md
+      - docs/architecture/adr-0016-hud-system-architecture.md
+    added: "2026-05-26"
+    revised: ""
+    resolves: "C4 — Input Rebinding Owner (consistency-failures.md)"
+
+  - state: player_controller_input_state
+    status: active
+    owner_system: AHostileWorldPlayerController
+    adr: docs/architecture/adr-0018-player-controller-architecture.md
+    interface: "CurrentInputState → EInputContextState (read-only enum reflecting current input gating intent: FreePlay/Stealth/Combat/Dialogue/Inventory/Paused/Cutscene). NOTE: authoritative active IMC list must be queried from UEnhancedInputLocalPlayerSubsystem, not this enum."
+    write_access: AHostileWorldPlayerController-only (state transitions driven by GSM/Combat/Stealth event subscriptions in BeginPlay)
+    referenced_by:
+      - docs/architecture/adr-0018-player-controller-architecture.md
+    added: "2026-05-26"
+    revised: ""
+
+  - state: context_prompt_state
+    status: active
+    owner_system: AHostileWorldPlayerController
+    adr: docs/architecture/adr-0018-player-controller-architecture.md
+    interface: "CurrentContextPrompt → FContextPrompt (read-only; 7 fields: Target, ActionLabel, TargetName, Type, Priority, bRequiresTool, RequiredTool). Published to UHUDSubsystem via SetContextPrompt()/ClearContextPrompt() on every resolver cycle."
+    write_access: AHostileWorldPlayerController-only (written by PriorityMerge() inside RunContextResolver() and cleared by GSM Cutscene/Paused/GameOver entry)
+    referenced_by:
+      - docs/architecture/adr-0018-player-controller-architecture.md
+    added: "2026-05-26"
     revised: ""
 
 # ─── INTERFACE CONTRACTS ──────────────────────────────────────────────────────
@@ -72,6 +107,41 @@ api_decisions:
     added: "2026-05-19"
     revised: ""
 
+  - purpose: rebinding_persistence_location
+    status: active
+    api: "UEnhancedInputUserSettings own save file (profile-scoped, separate from USaveGame slot)"
+    not: "Serializing FKey bindings into ADR-0006 USaveGame; mirroring bindings into per-slot save data"
+    adr: docs/architecture/adr-0003-enhanced-input-architecture.md
+    reason: "Bindings are profile-scoped — apply across all save slots and new-game sessions. Per-slot storage would force re-binding after every new game start. EIUS own file is Epic's intended persistence path; using it avoids hand-rolled FKey serialization. ADR-0006 explicitly excludes input bindings from USaveGame."
+    referenced_by:
+      - docs/architecture/adr-0003-enhanced-input-architecture.md
+      - docs/architecture/adr-0006-save-load-serialization.md
+    added: "2026-05-26"
+    revised: ""
+    resolves: "OQ-1 (ADR-0003) + C4 (consistency-failures.md)"
+
+  - purpose: player_controller_pattern
+    status: active
+    api: "AHostileWorldPlayerController : APlayerController — three internal subsystems: (1) IMC Stack Manager (sole PushIMC/PopIMC gateway), (2) Context Action Resolver (SphereOverlapActors + AsyncLineTraceByChannel poll at adaptive 2–6.7 Hz), (3) Input State Router (EInputContextState FSM + Route_* multicast delegates)"
+    not: "APlayerController owning gameplay state (HP cache, stamina, movement enum); UInputRouterSubsystem as separate class; AHostileCharacter owning SetupPlayerInputComponent bindings for core gameplay actions"
+    adr: docs/architecture/adr-0018-player-controller-architecture.md
+    reason: "PC is UE's natural input owner — survives pawn swaps, fires SetupInputComponent once. Thin-router keeps PC stateless. UE actor hierarchy places APlayerController as the correct class for this responsibility. All gameplay state lives in Character and subsystems per ADR-0001/0003."
+    referenced_by:
+      - docs/architecture/adr-0018-player-controller-architecture.md
+    added: "2026-05-26"
+    revised: ""
+
+  - purpose: async_trace_poll_api
+    status: active
+    api: "UWorld::AsyncLineTraceByChannel() → FTraceHandle; UWorld::QueryTraceData(Handle, OutData) → bool (poll for results next cycle)"
+    not: "Delegate callback registered on FTraceHandle (does not exist in UE 5.7 — confirmed engine specialist 2026-05-26); synchronous LineTraceSingleByChannel inside context resolver timer; per-frame Tick() trace"
+    adr: docs/architecture/adr-0018-player-controller-architecture.md
+    reason: "UWorld::AsyncLineTraceByChannel returns FTraceHandle only — no callback API. Results polled via QueryTraceData() on the following timer cycle (4Hz cadence, one cycle latency). Engine specialist confirmed no delegate variant exists in UE 5.7. Async poll prevents frame spikes vs synchronous trace."
+    referenced_by:
+      - docs/architecture/adr-0018-player-controller-architecture.md
+    added: "2026-05-26"
+    revised: ""
+
 # ─── FORBIDDEN PATTERNS ──────────────────────────────────────────────────────
 
 forbidden_patterns:
@@ -82,9 +152,23 @@ forbidden_patterns:
     adr: docs/architecture/adr-0003-enhanced-input-architecture.md
     added: "2026-05-19"
 
+  - pattern: direct_eius_access_outside_pc
+    status: active
+    description: "No class other than AHostileWorldPlayerController may call UEnhancedInputUserSettings::MapPlayerKey / SaveSettings / LoadSettings. Settings-menu rebinding widget (owned by UHUDSubsystem) must route through PC::ApplyKeyRebind() / SaveRebindings() / LoadRebindings() BlueprintCallable API."
+    why: "Single owner of the rebinding operation ensures atomic Apply+Save semantics, consistent failure handling, and one auditable code path. Direct EIUS calls from UI scatter logic and bypass the IA_Pause lock guarantee."
+    adr: docs/architecture/adr-0003-enhanced-input-architecture.md
+    added: "2026-05-26"
+
   - pattern: direct_ia_binding_in_movement
     status: active
     description: "UHostileMovementComponent and UCoverComponent must not call BindAction() on any UInputAction directly. Movement input is received exclusively via AHostileWorldPlayerController multicast delegates (OnMove, OnSprint, OnCrouch, OnJump, OnDodge, OnLean*)."
     why: "ADR-0003 establishes PC as the sole IA_* binding location. Direct CMC binding bypasses IMC context switching, breaks the thin-router pattern, and produces input that fires regardless of active mapping context."
     adr: docs/architecture/adr-0010-movement-architecture.md
     added: "2026-05-20"
+
+  - pattern: direct_addmappingcontext_outside_pc
+    status: active
+    description: "No class other than AHostileWorldPlayerController may call UEnhancedInputLocalPlayerSubsystem::AddMappingContext() or RemoveMappingContext() directly. UStealthComponent (for IMC_Stealth) and UCombatSubsystem (for IMC_Combat) must route all IMC changes through PC->PushIMC(UInputMappingContext*, int32) and PC->PopIMC(UInputMappingContext*). Both must hold TWeakObjectPtr<AHostileWorldPlayerController> acquired in BeginPlay() and check IsValid(PC) before calling."
+    why: "ADR-0003 establishes PushIMC/PopIMC as the sole IMC change gateway. adr-input.yaml state ownership assigns active_input_mapping_contexts exclusively to AHostileWorldPlayerController. Direct EIUS calls from components/subsystems scatter IMC authority, break the single-owner guarantee, and can produce double-push or orphaned pop sequences when multiple systems change IMC state concurrently."
+    adr: docs/architecture/adr-0018-player-controller-architecture.md
+    added: "2026-05-26"

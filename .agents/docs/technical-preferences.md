@@ -38,7 +38,7 @@
 
 ## Testing
 
-- **Framework**: [TO BE CONFIGURED — /test-setup will scaffold this]
+- **Framework**: UE Automation Testing (IMPLEMENT_SIMPLE_AUTOMATION_TEST / IMPLEMENT_COMPLEX_AUTOMATION_TEST)
 - **Minimum Coverage**: Logic systems, balance formulas, save/load
 - **Required Tests**: Balance formulas, gameplay systems, save data integrity
 

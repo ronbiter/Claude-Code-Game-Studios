@@ -113,3 +113,31 @@ adrs:
     status: active
     adr_file: docs/architecture/adr-0014-combat-system-architecture.md
     registry_file: docs/registry/adr-subsystems.yaml
+
+  - id: ADR-0015
+    title: Health System Architecture
+    domain: subsystems
+    status: active
+    adr_file: docs/architecture/adr-0015-health-system-architecture.md
+    registry_file: docs/registry/adr-subsystems.yaml
+
+  - id: ADR-0016
+    title: HUD System Architecture
+    domain: rendering
+    status: active
+    adr_file: docs/architecture/adr-0016-hud-system-architecture.md
+    registry_file: docs/registry/adr-rendering.yaml
+
+  - id: ADR-0017
+    title: Stealth System Architecture
+    domain: subsystems
+    status: active
+    adr_file: docs/architecture/adr-0017-stealth-system-architecture.md
+    registry_file: docs/registry/adr-subsystems.yaml
+
+  - id: ADR-0018
+    title: Player Controller Architecture
+    domain: input
+    status: active
+    adr_file: docs/architecture/adr-0018-player-controller-architecture.md
+    registry_file: docs/registry/adr-input.yaml

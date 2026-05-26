@@ -308,9 +308,9 @@ T_eval = 1.0 / R_poll
 | **Player saves/loads mid-quest with pending consequences** | All quest state, active objectives, and pending consequences are saved. On load, consequence evaluation resumes from saved state. | Player should not lose quest progress or miss deferred consequences due to saving. |
 | **Two active contracts have conflicting objectives** (e.g., Contract A: "Protect Marcus"; Contract B: "Kill Marcus") | Both contracts remain active. The player's action resolves the conflict naturally. If Marcus dies, Contract A fails, Contract B's kill objective completes. No special conflict resolution — let the world decide. | The world does not protect the player from their own choices. Conflicting contracts are a feature, not a bug. |
 | **Quest consequence triggers while player is in dialogue** | Deferred consequence is deferred further. Fires when player exits dialogue AND meets all other conditions. | Dialogue takes priority. Consequences should not interrupt conversations. |
-| **Quest consequence triggers while player is in combat** | Deferred consequence is deferred further. Fires when combat ends AND conditions are met. | Combat takes priority. Same rationale as revelation deferral in Investigation System. |
+| **Quest consequence triggers while player is in combat** | Deferred consequence is deferred further. Fires when `IsPlayerUnderThreat()` returns false AND conditions are met. | Combat takes priority. Same rationale as revelation deferral in Investigation System. |
 | **Player abandons a contract after completing some objectives** | Contract moves to **Abandoned** state. No relationship penalty. Completed objectives are reset. Player can re-accept if contract is still available. | Abandonment is a valid player choice. Resetting progress prevents partial-completion exploitation. |
-| **CTQ spawns while player is in combat** | CTQ enters **Active** state internally but does not notify the player until combat ends. HUD update deferred. | Non-optional quests should not distract from survival. |
+| **CTQ spawns while player is in combat** | CTQ enters **Active** state internally but does not notify the player until `IsPlayerUnderThreat()` returns false. HUD update deferred. | Non-optional quests should not distract from survival. |
 | **Quest reward item would exceed inventory capacity** | Item is dropped at the player's feet with a notification: "[ItemName] dropped — inventory full." Relationship rewards and clue unlocks still apply. | Inventory limits are real. The player must manage space or lose physical rewards. |
 | **Deferred consequence delay spans a save/load** | Consequence stores T_complete and T_delay in save data. On load, evaluation checks T_now against T_complete + T_delay. If overdue, fires immediately (if conditions met). | Consequences should not be lost or delayed incorrectly due to save/load. |
 | **Player turns in a contract to an NPC who has moved to a new location** | Turn-in location is updated to NPC's current location. If NPC's new location is undiscovered, quest log notes: "Sarah has moved. Find her new location." | NPCs are not static quest dispensers. The world moves. |
@@ -418,8 +418,8 @@ T_eval = 1.0 / R_poll
 | Item rewards and collection objectives | `design/gdd/inventory-system.md` | AddItem, HasItem, inventory capacity | Data dependency |
 | Location objectives use zone state | `design/gdd/scene-management.md` | GetCurrentZone, IsZoneDiscovered | Data dependency |
 | Active objectives render in HUD | `design/gdd/hud-system.md` | ShowQuestObjective, UpdateQuestLog, completion/failure notifications | Data dependency |
-| Quest evaluation pauses during combat | `design/gdd/combat-system.md` | bIsInCombat, combat state transitions | State trigger |
-| Deferred consequence combat gate | `design/gdd/combat-system.md` | Combat state for consequence deferral | Rule dependency |
+| Quest evaluation pauses during combat | `design/gdd/combat-system.md` | `IsPlayerUnderThreat()` | State trigger |
+| Deferred consequence combat gate | `design/gdd/combat-system.md` | `IsPlayerUnderThreat()` for consequence deferral | Rule dependency |
 
 ## Acceptance Criteria
 
@@ -445,7 +445,7 @@ T_eval = 1.0 / R_poll
 
 - **GIVEN** player saves game with 2/3 objectives complete and 1 pending consequence, **WHEN** game loads, **THEN** quest state restores exactly, pending consequence resumes evaluation.
 
-- **GIVEN** player is in combat and a deferred consequence is ready to fire, **WHEN** combat state is active, **THEN** consequence is deferred until combat ends.
+- **GIVEN** player is in combat and a deferred consequence is ready to fire, **WHEN** `IsPlayerUnderThreat()` returns true, **THEN** consequence is deferred until `IsPlayerUnderThreat()` returns false.
 
 - **GIVEN** player is in dialogue and a deferred consequence is ready to fire, **WHEN** dialogue state is active, **THEN** consequence is deferred until dialogue ends.
 

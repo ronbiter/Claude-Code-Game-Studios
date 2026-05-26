@@ -212,6 +212,102 @@ ExecuteGameOverTransition():
 
 All state tags defined in `GameplayTags.h` under the `GSM.State.*` namespace.
 
+### Supplement: World Lifecycle Hooks (2026-05-26)
+
+**Added to support ADR-0016 (HUD)** — and any World-tier subscriber that must (re)bind on level transitions. Adopted as part of post-MVP architecture review (see `architecture-review-2026-05-26.md`). No revision to the core state-machine contract; this is an additive surface that piggybacks on UE5's canonical world-lifecycle delegates and re-broadcasts them with GSM-scoped semantics.
+
+#### Problem
+
+World-tier subsystems (`UCombatSubsystem`, `UStealthSubsystem`, `UInfectionSpreadSubsystem`, etc.) are destroyed and recreated on every level transition. Session-tier subscribers (notably `UHUDSubsystem` on `ULocalPlayer`) must:
+- **Unbind** all delegates from old world-tier subsystems before they are destroyed (otherwise GC retains the listener slot but the producer is gone — silent dead subscription)
+- **Rebind** to the new world-tier subsystems after they are initialized
+
+Subscribing only to `OnStateEntered(GSM.State.Playing)` is insufficient because: (a) on initial game start, world subsystems may not yet be initialized when `Playing` is entered; (b) on level transition, `OnStateExited(Playing)` fires while the old world is still alive but mid-teardown — too late to unbind cleanly without race conditions.
+
+#### Decision
+
+`UHostileWorldGSM` subscribes to UE5's `FWorldDelegates` in `Initialize()`, filters to game worlds only, and re-broadcasts two new GSM-scoped delegates:
+
+```cpp
+// ── New delegate declarations (additive) ─────────────────────────────────────
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+    FOnGSMLevelReady, UWorld*, World);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+    FOnGSMWorldTearDown, UWorld*, World);
+
+// ── Public delegates (additive on UHostileWorldGSM) ──────────────────────────
+UPROPERTY(BlueprintAssignable, Category="GSM|WorldLifecycle")
+FOnGSMLevelReady OnLevelReady;       // Fires AFTER world subsystems are initialized
+                                      // and AGameModeBase::StartPlay() completes.
+                                      // Safe binding point for World-tier subscriptions.
+
+UPROPERTY(BlueprintAssignable, Category="GSM|WorldLifecycle")
+FOnGSMWorldTearDown OnWorldTearDown; // Fires BEFORE world subsystems are torn down.
+                                      // Last safe point to unbind World-tier subscriptions.
+
+// ── Internal hook handles (added to Initialize/Deinitialize) ────────────────
+private:
+    FDelegateHandle WorldBeginPlayHandle;
+    FDelegateHandle PreWorldFinishDestroyHandle;
+
+    void HandleWorldBeginPlay(UWorld* World);          // → broadcasts OnLevelReady
+    void HandlePreWorldFinishDestroy(UWorld* World);   // → broadcasts OnWorldTearDown
+```
+
+Wiring inside `Initialize()`:
+
+```cpp
+WorldBeginPlayHandle = FWorldDelegates::OnWorldBeginPlay.AddUObject(
+    this, &UHostileWorldGSM::HandleWorldBeginPlay);
+
+PreWorldFinishDestroyHandle = FWorldDelegates::OnPreWorldFinishDestroy.AddUObject(
+    this, &UHostileWorldGSM::HandlePreWorldFinishDestroy);
+```
+
+Both handlers MUST filter to game worlds before broadcasting:
+
+```cpp
+void UHostileWorldGSM::HandleWorldBeginPlay(UWorld* World)
+{
+    if (!World || World->WorldType != EWorldType::Game) { return; } // skip PIE editor worlds, preview, etc.
+    OnLevelReady.Broadcast(World);
+}
+
+void UHostileWorldGSM::HandlePreWorldFinishDestroy(UWorld* World)
+{
+    if (!World || World->WorldType != EWorldType::Game) { return; }
+    OnWorldTearDown.Broadcast(World);
+}
+```
+
+`Deinitialize()` MUST remove both handles via `FWorldDelegates::OnWorldBeginPlay.Remove(WorldBeginPlayHandle)` and the equivalent for `PreWorldFinishDestroy` — required to avoid stale delegate entries when the game instance is recreated (level travel via Standalone PIE replay, etc.).
+
+#### Ordering Guarantees
+
+| Sequence | Order |
+|----------|-------|
+| Initial game start | `OnLevelReady` fires AFTER all `UWorldSubsystem::Initialize()` for the first map, AFTER `AGameModeBase::StartPlay()`. Subscribers bind here. |
+| Level transition (out) | `OnWorldTearDown` fires BEFORE `UWorldSubsystem::Deinitialize()` of the outgoing world. Subscribers unbind here. |
+| Level transition (in) | `OnWorldTearDown` (old) → outgoing `Deinitialize()` → world destruction → new world creation → new `UWorldSubsystem::Initialize()` → `AGameModeBase::StartPlay()` → `OnLevelReady` (new). |
+| Game shutdown | `OnWorldTearDown` fires for the final world before game instance destruction. |
+
+These guarantees follow directly from UE5's `FWorldDelegates::OnWorldBeginPlay` (fires at end of `UWorld::BeginPlay()` after StartPlay) and `OnPreWorldFinishDestroy` (fires at top of `UWorld::FinishDestroy()` before any subsystems are torn down).
+
+#### Forbidden Patterns (enforced)
+
+- **Binding to World-tier subsystems in `Initialize()` of a Session-tier subsystem** — the world is not guaranteed to exist. Bind inside the `OnLevelReady` handler instead.
+- **Unbinding in `Deinitialize()` of a Session-tier subsystem alone** — by the time `Deinitialize()` fires on session shutdown, world-tier producers may have already been destroyed. Unbind in the `OnWorldTearDown` handler.
+- **Calling `GetWorld()` on a stored `UWorld*` cached from `OnLevelReady`** — the world pointer may be stale across multiple level transitions. Use the `UWorld*` parameter passed to each broadcast.
+
+#### Why Not Hook State Transitions Directly
+
+`OnStateEntered(Playing)` and `OnStateExited(Playing)` were considered but rejected:
+1. **Initial-game race**: on cold start, the Playing transition may fire before `UWorldSubsystem::Initialize()` completes for all world subsystems (Initialize order between WorldSubsystems vs GameMode `StartPlay` is not guaranteed in all configurations).
+2. **Mid-transition teardown timing**: `OnStateExited(Playing)` fires when the Loading transition is queued — but the world is not yet being destroyed. Subscribers would unbind too early and miss late events from systems still finalizing.
+3. **Decoupling state machine from world lifecycle**: GSM states model gameplay flow; world lifecycle is an engine-level concern. Conflating them couples GSM evolution to world-management decisions.
+
+`FWorldDelegates` is the canonical UE5 hook surface for world lifecycle events and is the appropriate source of truth.
+
 ## Alternatives Considered
 
 ### Alternative 1: GameMode-Owned Component (original GDD wording)
@@ -262,6 +358,8 @@ All state tags defined in `GameplayTags.h` under the `GSM.State.*` namespace.
 | `game-state-machine.md` | Formula 3 — Priority-sorted queue | `TransitionQueue` sorted by `Event.Priority` descending before each drain |
 | `game-state-machine.md` | GameOver exception (clears stack) | `ExecuteGameOverTransition()` fires `OnStateExited` for each state before clearing |
 | All 22 GDDs | "Subscribes to GSM state changes" | All systems call `GetSubsystem<UHostileWorldGSM>()->OnStateEntered.AddDynamic(...)` |
+| ADR-0016 (HUD) | World-tier (re)binding hook for `UHUDSubsystem::BindWorldSystems()` | Supplement: `OnLevelReady` delegate fires after world subsystems initialized; `UHUDSubsystem` binds in handler |
+| ADR-0016 (HUD) | World-tier unbind hook for `UHUDSubsystem::UnbindWorldSystems()` | Supplement: `OnWorldTearDown` delegate fires before world subsystems destroyed; `UHUDSubsystem` unbinds in handler |
 
 ## Performance Implications
 - **CPU**: `FTickableGameObject::Tick()` fires every frame. `ProcessTransitionQueue()` is O(N log N) for queue sort where N = same-frame requests (typically 0–2). Cost < 0.05ms in normal play.
@@ -284,4 +382,5 @@ No existing code to migrate. Greenfield implementation.
 ## Related Decisions
 - ADR-0001 — Cross-System Communication: all GSM delegates follow the Tier 1 multicast delegate pattern
 - ADR-0003 (planned) — Enhanced Input Architecture: Input System subscribes to GSM `OnStateEntered` to switch IMCs
+- ADR-0016 — HUD System Architecture: `UHUDSubsystem` consumes the World Lifecycle Hooks supplement (`OnLevelReady` / `OnWorldTearDown`)
 - `design/gdd/game-state-machine.md` — canonical state list, transition table, priority values, and all behavioral rules

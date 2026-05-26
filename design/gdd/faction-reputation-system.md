@@ -311,7 +311,7 @@ modifier = piecewise:
 
 **EC-6 — Faction member killed by alien AI or environmental hazard**: No reputation change. The faction does not blame the player for deaths they did not cause. However, if the faction was in a Conflict state (both factions demanding alignment), the death of a faction's leader by non-player causes triggers an automatic timeout — the Conflict resolves after 72 in-game hours with no player penalty.
 
-**EC-7 — Player is in combat when standing changes**: UI notifications for standing changes are deferred until combat ends. Behavioral changes (guards becoming hostile, trade becoming available) still apply immediately but are not visually telegraphed until combat exits. Combat state is defined as: any NPC with the player in their aggro pool, or the player has taken damage in the last 5 seconds.
+**EC-7 — Player is in combat when standing changes**: UI notifications for standing changes are deferred until `IsPlayerUnderThreat()` returns false. Behavioral changes (guards becoming hostile, trade becoming available) still apply immediately but are not visually telegraphed until combat exits.
 
 **EC-8 — Ripple pushes a faction across a tier boundary unintentionally**: No override. Ripples are a designed consequence of the faction relationship matrix. If helping Faction A causes Faction B to drop from Known to Wary via ripple, that is the intended outcome. The player is informed of the consequence via notification: "The Tethered notice your alliance with The Remnant."
 
@@ -356,7 +356,6 @@ modifier = piecewise:
 | `ImmunityRevealBonus` (one-time reputation boost) | +10 | [5, 25] | Reputation gained when faction first learns player is immune | At +5: barely noticeable — reveal feels underwhelming. At +25: jumps from Unknown (+25) to +35 (Known) — too easy to reach Known. |
 | `ConflictTimerHours` (in-game hours for faction conflict) | 48 | [24, 120] | How long player has before faction conflict auto-resolves | At 24: pressure is high, player must choose quickly. At 120: conflict is too diffuse, loses urgency. |
 | `AbandonmentDecayDays` (days of decay after contract abandonment) | 3 | [1, 7] | How long passive decay continues after abandoning a contract | At 1: decay is brief. At 7: maximum -19 from single abandoned contract (-5 immediate + 7 × -2). |
-| `CombatStateDamageWindowSeconds` (seconds since last damage to exit combat) | 5 | [2, 15] | How long after taking damage the player is still "in combat" | At 2: notifications fire almost immediately. At 15: player can be in prolonged combat state, notifications pile up. |
 
 **Interactions between knobs:**
 - `K_infection` and `K_desperation` share the same amplification formula. Setting both to 1.0 yields a 2.0x multiplier (delta doubles). If this is too strong, reduce individual knobs rather than the formula.
@@ -443,7 +442,7 @@ modifier = piecewise:
 
 **AC-11 — Save/Load preserves faction state**: GIVEN a saved game with multiple factions at various standing tiers, WHEN the game is loaded, THEN all faction reputations, relationship states, and immunity reveal flags are restored to their saved values.
 
-**AC-12 — Combat-deferred notification fires after combat exits**: GIVEN the player is in combat and receives a reputation change, WHEN combat ends, THEN the notification is displayed. The notification does not appear during combat.
+**AC-12 — Combat-deferred notification fires after combat exits**: GIVEN the player is in combat and receives a reputation change, WHEN `IsPlayerUnderThreat()` returns false, THEN the notification is displayed. The notification does not appear while `IsPlayerUnderThreat()` is true.
 
 ## Open Questions
 

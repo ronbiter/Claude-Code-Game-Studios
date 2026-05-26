@@ -36,7 +36,8 @@ Seven game systems (Infection Spread, Alien AI, Dialogue, Investigation, HUD, In
 - Single-player only — no server-authoritative constraints at this stage
 - Single primary game module: `HostileWorld`
 - Alien AI squads and investigation clues must reset per level load
-- Infection spread, quest progress, faction standing, and inventory must persist across level transitions
+- Quest progress, faction standing, and inventory must persist across level transitions
+- Infection spread is per-level (World-tier per GDD Rule 8); save/load handles disk persistence across sessions
 
 ### Requirements
 - Must define a tier decision rule any programmer can apply in under a minute
@@ -51,7 +52,7 @@ Seven game systems (Infection Spread, Alien AI, Dialogue, Investigation, HUD, In
 
 | Tier | UE Class | Lifecycle | Use When |
 |------|----------|-----------|----------|
-| **Session** | `UGameInstanceSubsystem` | Created once per play session; survives level transitions | State must persist across levels (infection, quests, faction, save/load service) |
+| **Session** | `UGameInstanceSubsystem` | Created once per play session; survives level transitions | State must persist across levels (quests, faction, save/load service) |
 | **World** | `UWorldSubsystem` | Created per `UWorld`; destroyed on level transition | State is per-level and must reset on load (investigation clues, alien squads, dialogue triggers) |
 | **Player** | `ULocalPlayerSubsystem` | Created per `ULocalPlayer`; survives level transitions | Viewport-bound UI state (HUD display config) — gameplay state that must persist uses Session tier instead |
 | **Per-Actor** | `UActorComponent` | Lives and dies with the owning `AActor` | Per-actor behaviour and state (health, movement, stealth, combat) — not subsystems |
@@ -61,15 +62,16 @@ Seven game systems (Infection Spread, Alien AI, Dialogue, Investigation, HUD, In
 | System | Tier | Class | Rationale |
 |--------|------|-------|-----------|
 | Game State Machine | Session (`UGameInstanceSubsystem`) | `UHostileWorldGSM` | ADR-0002: Loading state spans level transitions |
-| Infection Spread | Session (`UGameInstanceSubsystem`) | `UInfectionSubsystem` | Global spread percentage persists across all maps |
+| Infection Spread | World (`UWorldSubsystem`) | `UInfectionSpreadSubsystem` | Per-level infection grid per GDD Rule 8; each world has independent infection state. Save/Load (ADR-0006) handles disk persistence via `IHostileSaveProvider`. Registers on `Initialize()`, unregisters on `Deinitialize()`. |
 | Quest Tracking | Session (`UGameInstanceSubsystem`) | `UQuestSubsystem` | Active quest state persists across levels |
 | Faction Reputation | Session (`UGameInstanceSubsystem`) | `UFactionSubsystem` | Standing persists for the full play session |
 | Save/Load Service | Session (`UGameInstanceSubsystem`) | `USaveLoadSubsystem` | Save/load operations are session-level; tied to `UGameInstance` |
 | Inventory | Session (`UGameInstanceSubsystem`) | `UInventorySubsystem` | Player carries items between levels — gameplay state, not UI state |
 | Investigation | Session (`UGameInstanceSubsystem`) | `UInvestigationSubsystem` | Investigation threads are session-persistent revelation chains (`Unknown → Suspected → Confirmed → Revelation → Revealed`); revelation deferral can span multiple level transitions — World-tier would wipe thread state on every load |
-| Tutorial | Session (`UGameInstanceSubsystem`) | `UTutorialSubsystem` | `FTutorialProgress` (completed/dismissed hint IDs) persists across all level transitions per Tutorial GDD Rule 8; World-tier would reset learned hints on every map load |
+| Tutorial | Session (`UGameInstanceSubsystem`) | `UTutorialSubsystem` | `FTutorialSaveData` (completed hint IDs only — DISMISSED state removed per Tutorial GDD Rule 5) persists across all level transitions per Tutorial GDD Rule 8; World-tier would reset learned hints on every map load |
 | Alien AI Coordination | World (`UWorldSubsystem`) | `UAlienSquadSubsystem` | Alien squads exist in the current world; must reset on new map |
-| Dialogue Controller | World (`UWorldSubsystem`) | `UDialogueSubsystem` | Active conversations are world-context; no meaningful cross-level state |
+| Dialogue Controller | World (`UWorldSubsystem`) | `UDialogueSubsystem` | Active conversation state only (current node, wheel, active NPC); destroyed on level transition — no persistent state stored here |
+| NPC Relationships | Session (`UGameInstanceSubsystem`) | `UNPCRelationshipSubsystem` | Trust/Fear/Knowledge/Flags/Topics per NPC are session-level per Dialogue GDD Rule 4/8; must survive level transitions. `UDialogueSubsystem` queries this subsystem (cross-tier World→Session access is always safe per this ADR) |
 | HUD | Player (`ULocalPlayerSubsystem`) | `UHUDSubsystem` | Viewport-bound display state; per local player |
 | Health / Stealth / Movement / Combat | Per-Actor (`UActorComponent`) | Component classes | Per-actor; live and die with the owning `AActor` |
 
@@ -97,8 +99,8 @@ If a system grows beyond ~20 source files and has a stable public API worth reus
 ### Access Patterns
 
 ```cpp
-// Session subsystem — safe anywhere after GameInstance::Init()
-UInfectionSubsystem* Inf = GetGameInstance()->GetSubsystem<UInfectionSubsystem>();
+// World subsystem — valid while UWorld exists
+UInfectionSpreadSubsystem* Inf = GetWorld()->GetSubsystem<UInfectionSpreadSubsystem>();
 
 // Session subsystem — safe anywhere after GameInstance::Init()
 UInvestigationSubsystem* Inv = GetGameInstance()->GetSubsystem<UInvestigationSubsystem>();
@@ -141,17 +143,18 @@ void UInvestigationSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 ```
 UGameInstance (session — full play session)
 ├── UHostileWorldGSM          ← ADR-0002
-├── UInfectionSubsystem
 ├── UQuestSubsystem
 ├── UFactionSubsystem
 ├── USaveLoadSubsystem
 ├── UInventorySubsystem
 ├── UInvestigationSubsystem   ← session-tier: thread state spans level transitions
-└── UTutorialSubsystem        ← session-tier: FTutorialProgress persists across levels
+├── UTutorialSubsystem        ← session-tier: FTutorialSaveData persists across levels
+└── UNPCRelationshipSubsystem ← session-tier: Trust/Fear/Knowledge/Flags per NPC persist across levels
 
 UWorld (per level — destroyed on level transition)
 ├── UAlienSquadSubsystem
-└── UDialogueSubsystem
+├── UInfectionSpreadSubsystem ← World-tier per GDD Rule 8; IHostileSaveProvider; registers/unregisters on Init/Deinit
+└── UDialogueSubsystem        ← active conversation state only; queries UNPCRelationshipSubsystem for relationship data
 
 ULocalPlayer (per player — survives level transitions)
 └── UHUDSubsystem
@@ -188,7 +191,7 @@ AActor hierarchy (per actor)
 ### Positive
 - Tier decision is a 30-second lookup against the policy table
 - Investigation/AlienSquad state resets per level with no teardown code — `UWorldSubsystem::Deinitialize()` fires automatically
-- Infection/Quest/Faction/Inventory state persists with no extra work — `UGameInstanceSubsystem` lives for the session
+- Quest/Faction/Inventory state persists with no extra work — `UGameInstanceSubsystem` lives for the session
 - Single module keeps build times short and cross-system headers simple
 - Pattern is consistent with ADR-0002's established `GetGameInstance()->GetSubsystem<T>()` idiom
 
@@ -205,9 +208,10 @@ AActor hierarchy (per actor)
 
 | GDD System | Requirement | How This ADR Addresses It |
 |------------|-------------|--------------------------|
-| infection-spread.md | TR-infection-001: global infection tracking persists across level transitions | `UGameInstanceSubsystem` tier → survives level loads |
+| infection-spread.md | TR-infection-001: infection state is per-level (GDD Rule 8); each world has independent infection grid; save/load handles disk persistence | `UWorldSubsystem` tier → destroyed on level transition; `USaveLoadSubsystem` (ADR-0006) serializes grid via `IHostileSaveProvider` |
 | alien-ai.md | TR-ai-008: AI coordination subsystem resets when a new level loads | `UWorldSubsystem` tier → auto-destroyed on level transition |
-| dialogue-system.md | TR-dialogue-001: dialogue state machine requires a central controller per scene | `UWorldSubsystem` tier; class name `UDialogueSubsystem` |
+| dialogue-system.md | TR-dialogue-001: dialogue state machine requires a central controller per scene | `UWorldSubsystem` tier; class name `UDialogueSubsystem` (active conversation only) |
+| dialogue-system.md | TR-dialogue-003/008: NPC relationship state (Trust/Fear/Knowledge/Flags/Topics) must persist across level transitions and save/load | `UGameInstanceSubsystem` tier; class name `UNPCRelationshipSubsystem`; `UDialogueSubsystem` delegates all relationship reads/writes to it |
 | investigation.md | TR-investigation-001: investigation threads are session-persistent revelation chains spanning level transitions | `UGameInstanceSubsystem` tier → thread state survives level loads; per-level clue-discovery events are stored inside this session subsystem |
 | hud-system.md | TR-hud-003: HUD requires a subsystem-tier manager tied to the viewport | `ULocalPlayerSubsystem` tier → viewport-bound lifecycle |
 | inventory-system.md | TR-inventory-001: inventory state must persist when the player changes levels | `UGameInstanceSubsystem` tier → persists for the full play session |
@@ -226,7 +230,8 @@ No existing code to migrate. All subsystem classes are new — the project has n
 ## Validation Criteria
 - All 10 subsystems listed in the tier table compile and `Initialize()` without crash in PIE
 - `UInvestigationSubsystem` thread state persists across a PIE level transition (session subsystem confirmed — revelation chain survives map load)
-- `UInfectionSubsystem` spread value persists across a PIE level transition (session subsystem confirmed)
+- `UInfectionSpreadSubsystem` initializes fresh on each PIE level load; save/load round-trip restores prior grid state correctly (World-tier confirmed per GDD Rule 8)
+- `UInfectionSpreadSubsystem::Deinitialize()` unregisters from `USaveLoadSubsystem` — no stale provider reference after level transition
 - `UInventorySubsystem` item list persists when the player travels between PIE levels
 - No subsystem class caches raw `AActor*` without clearing it in `OnWorldEndPlay()` or `Deinitialize()`
 - Lazy access pattern: no subsystem calls `GetSubsystem<T>()` on a peer inside `Initialize()` without `InitializeDependency<T>()` guard

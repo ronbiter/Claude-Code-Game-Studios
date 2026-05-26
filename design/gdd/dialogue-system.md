@@ -258,44 +258,50 @@ Fear recovery is tracked by the Dialogue System but triggered by world events (C
 | **Combat System** | Reads | Combat state for dialogue interruption | `bIsInCombat` — dialogue cannot start during combat. Melee threat interrupts active dialogue. |
 | **HUD System** | Writes | Radial wheel rendering, choice display | `ShowDialogueWheel(Choices[])`, `HideDialogueWheel()` — HUD System renders the radial choice wheel. |
 | **Audio System** | Writes | NPC voice lines, dialogue SFX | `PlayDialogueLine(NPCId, LineId)`, `PlayDialogueSound(EDialogueSound)` — NPC voice delivery, radial wheel SFX. |
-| **Save/Load System** | Reads + Writes | Relationship state, conversation history | `SaveDialogueState()`, `RestoreDialogueState()` — persists all NPC relationship data. |
+| **Save/Load System** | Reads + Writes | Relationship state, conversation history | `UNPCRelationshipSubsystem::SaveRelationshipState()`, `RestoreRelationshipState()` — persists all NPC relationship data. `UDialogueSubsystem` holds no persistent state and is not saved. |
 
 **Interface Contract:**
 
 ```cpp
-// Dialogue System public interface (C++ sketch)
+// Active conversation controller — World-tier (destroyed on level transition)
+// Stores only volatile conversation state. All relationship data lives in UNPCRelationshipSubsystem.
 class UDialogueSubsystem : public UWorldSubsystem {
     // Dialogue lifecycle
     void StartDialogue(FNPCId NPCId);
     void EndDialogue();
     bool IsDialogueActive();
     FNPCId GetCurrentNPC();
-    
+
     // Choice handling
     void SelectChoice(FChoiceId ChoiceId);
     TArray<FDialogueChoice> GetAvailableChoices();
-    
+
+    // Clue registration
+    void RegisterTestimonyClue(FClueId ClueId, FDialogueNodeId NodeId);
+
+    // Events
+    FDelegateHandle SubscribeToDialogueStarted(FDialogueStartedDelegate Callback);
+    FDelegateHandle SubscribeToDialogueEnded(FDialogueEndedDelegate Callback);
+    FDelegateHandle SubscribeToClueDiscovered(FDialogueClueDiscoveredDelegate Callback);
+}
+
+// NPC relationship store — Session-tier (survives level transitions)
+// Owns all persistent NPC social state. UDialogueSubsystem queries this subsystem;
+// cross-tier World→Session access is always safe (ADR-0004).
+class UNPCRelationshipSubsystem : public UGameInstanceSubsystem {
     // Relationship queries
     FRelationshipState GetRelationship(FNPCId NPCId);
     void ModifyRelationship(FNPCId NPCId, ERelationshipDimension Dimension, int32 Delta);
     bool HasFlag(FNPCId NPCId, FName FlagName);
     void SetFlag(FNPCId NPCId, FName FlagName, bool Value);
-    
+
     // Topic gating
     TArray<FDialogueTopic> GetAvailableTopics(FNPCId NPCId);
     bool IsTopicUnlocked(FNPCId NPCId, FTopicId TopicId);
-    
-    // Clue registration
-    void RegisterTestimonyClue(FClueId ClueId, FDialogueNodeId NodeId);
-    
-    // Events
-    FDelegateHandle SubscribeToDialogueStarted(FDialogueStartedDelegate Callback);
-    FDelegateHandle SubscribeToDialogueEnded(FDialogueEndedDelegate Callback);
-    FDelegateHandle SubscribeToClueDiscovered(FDialogueClueDiscoveredDelegate Callback);
-    
-    // Save/Load
-    FDialogueStateData SaveDialogueState();
-    void RestoreDialogueState(const FDialogueStateData& State);
+
+    // Save/Load (called by USaveLoadSubsystem)
+    FDialogueStateData SaveRelationshipState();
+    void RestoreRelationshipState(const FDialogueStateData& State);
 }
 ```
 
@@ -490,7 +496,7 @@ else:                              Greeting = Hostile
 | Detection level for dialogue accessibility | `design/gdd/stealth-system.md` | GetCurrentDetectionLevel(), detection ≥ 50 blocks dialogue | Rule dependency |
 | Combat state for dialogue interruption | `design/gdd/combat-system.md` | bIsInCombat, melee threat detection | Rule dependency |
 | Radial wheel rendering | `design/gdd/hud-system.md` | ShowDialogueWheel(), HideDialogueWheel() | UI dependency |
-| Relationship state persistence | `design/gdd/save-load-system.md` (Not Started) | SaveDialogueState(), RestoreDialogueState() | Data dependency |
+| Relationship state persistence | `design/gdd/save-load-system.md` (Not Started) | UNPCRelationshipSubsystem::SaveRelationshipState(), RestoreRelationshipState() | Data dependency |
 
 ## Acceptance Criteria
 

@@ -201,10 +201,15 @@ public:
     void PushIMC(UInputMappingContext* Context, int32 Priority);
     void PopIMC(UInputMappingContext* Context);
 
-    // ── Runtime rebinding ─────────────────────────────────────────────────
+        // ── Runtime rebinding (called by Settings menu widget — see Rebinding UI Ownership) ──
     // All rebindable except IA_Pause (bIsPlayerMappable=false on asset)
+    UFUNCTION(BlueprintCallable, Category="Input|Rebinding")
     void ApplyKeyRebind(FName ActionMappingName, FKey NewKey);   // wraps UEnhancedInputUserSettings
+
+    UFUNCTION(BlueprintCallable, Category="Input|Rebinding")
     void SaveRebindings();
+
+    UFUNCTION(BlueprintCallable, Category="Input|Rebinding")
     void LoadRebindings();
 
 protected:
@@ -313,6 +318,64 @@ void AHostileWorldPlayerController::SaveRebindings() { GetEIS()->GetUserSettings
 void AHostileWorldPlayerController::LoadRebindings() { GetEIS()->GetUserSettings()->LoadSettings(); }
 ```
 
+### Rebinding UI Ownership (C4 Resolution — 2026-05-26)
+
+The settings-menu key-capture widget is owned by the **HUD subsystem** (ADR-0016
+`UHUDSubsystem`, `ULocalPlayerSubsystem` tier). The widget is a **thin consumer**:
+it captures a new `FKey` from the user, then calls
+`AHostileWorldPlayerController::ApplyKeyRebind(ActionMappingName, NewKey)` followed
+by `SaveRebindings()`. The widget never touches `UEnhancedInputUserSettings`
+directly.
+
+```
+Settings Menu Widget (owned by UHUDSubsystem, ADR-0016)
+    │
+    │  user presses new key → captured FKey
+    ▼
+AHostileWorldPlayerController::ApplyKeyRebind(MappingName, NewKey)   ← sole rebinding op owner
+    │
+    ▼
+UEnhancedInputUserSettings::MapPlayerKey(...)
+    │
+    ▼
+AHostileWorldPlayerController::SaveRebindings()
+    │
+    ▼
+UEnhancedInputUserSettings::SaveSettings()   ← persists to EIUS own save file
+```
+
+**Ownership boundary**:
+- `AHostileWorldPlayerController` owns the **operation** (`ApplyKeyRebind`,
+  `SaveRebindings`, `LoadRebindings`) and is the only class permitted to call
+  `UEnhancedInputUserSettings`.
+- `UHUDSubsystem` (ADR-0016) owns the **UI widget** (`UWidget_KeyBindingsMenu`)
+  that presents bindings to the player and captures input. The widget holds a
+  `TWeakObjectPtr<AHostileWorldPlayerController>` and calls the BlueprintCallable
+  `ApplyKeyRebind` API.
+- No other class — not Movement, not Combat, not Save/Load — may call
+  `UEnhancedInputUserSettings` directly.
+
+### Rebinding Persistence Location (OQ-1 Resolution — 2026-05-26)
+
+**Decision**: Input bindings are persisted in `UEnhancedInputUserSettings`'s **own
+save file** (separate from the game save slot owned by ADR-0006). They are **not**
+serialized into `USaveGame`.
+
+**Rationale**:
+- Bindings are **profile-scoped** — they apply across all save slots and across
+  new-game sessions. Storing them in a per-slot save would force re-binding after
+  every new game start.
+- `UEnhancedInputUserSettings` is Epic's intended persistence path for this data;
+  using it avoids hand-rolled serialization of `FKey` arrays.
+- ADR-0006 explicitly excludes input bindings from `USaveGame` (see ADR-0006
+  Constraints).
+- Zero contention with the autosave-only / no-slot-management constraint in
+  ADR-0006 — bindings load on `BeginPlay()` before any save slot is touched.
+
+OQ-1 is hereby **closed**. The risk previously listed under "Rebinding conflict
+with Save/Load" no longer applies — both ADRs now formally agree on the
+separation.
+
 ## Alternatives Considered
 
 ### Alternative 1: Split Bindings — PC owns PC-level, Character owns gameplay
@@ -352,7 +415,7 @@ void AHostileWorldPlayerController::LoadRebindings() { GetEIS()->GetUserSettings
 - **Wrong DefaultPlayerInputClass**: If project settings don't set `DefaultPlayerInputClass = EnhancedPlayerInput`, the `Cast<UEnhancedInputComponent>` in `SetupInputComponent()` returns null and `check(EIC)` crashes on startup. **Mitigation**: `check(EIC)` provides immediate failure message; add to engine setup checklist.
 - **IMC_Stealth / IMC_Combat not in GSM switch**: These are pushed/popped by Movement and Combat systems directly (not GSM state). If those systems call `PushIMC()` without going through PC, they need a direct reference to the PC. **Mitigation**: Expose `PushIMC` / `PopIMC` as `UFUNCTION(BlueprintCallable)` and document the calling convention; Movement and Combat ADRs must reference this.
 - **`UEnhancedInputUserSettings` availability**: Requires `EnhancedInput` module in `Build.cs`. Already required for `UEnhancedInputLocalPlayerSubsystem`. **Mitigation**: Single `Build.cs` entry covers both.
-- **Rebinding conflict with Save/Load**: `UEnhancedInputUserSettings` saves to its own file. If the Save/Load ADR later moves rebindings into the save game object, both files may co-exist with stale data. **Mitigation**: Save/Load ADR must explicitly decide this; leave `UEnhancedInputUserSettings` as the active owner until that ADR is written.
+- **Rebinding conflict with Save/Load**: ✅ Resolved 2026-05-26 (C4). `UEnhancedInputUserSettings` own save file is authoritative. ADR-0006 explicitly excludes input bindings from `USaveGame`. See "Rebinding Persistence Location (OQ-1 Resolution)" above.
 
 ## GDD Requirements Addressed
 
@@ -391,7 +454,7 @@ No existing code to migrate. Greenfield implementation.
 
 | # | Question | Owner | Target |
 |---|----------|-------|--------|
-| OQ-1 | Should rebindings live in `UEnhancedInputUserSettings` own save file, or be serialized into the game's Save/Load object? | Save/Load ADR | Before Save/Load implementation |
+| OQ-1 | ✅ RESOLVED 2026-05-26 (C4) — bindings live in `UEnhancedInputUserSettings` own save file; explicitly excluded from `USaveGame` (ADR-0006). | Save/Load ADR | — |
 | OQ-2 | `IA_Flashlight`: toggle (hold) or latch (press to toggle)? Affects trigger type on the asset. | game-designer | Input GDD Q1 |
 | OQ-3 | Mirror lean when facing opposite direction? Affects IMC_Stealth lean bindings. | game-designer | Input GDD Q2 |
 

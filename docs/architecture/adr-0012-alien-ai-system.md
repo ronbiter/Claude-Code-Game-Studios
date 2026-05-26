@@ -37,7 +37,7 @@ No ADR documents which AI framework governs alien behavior in Hostile World, how
 - All cross-system events via ADR-0001 dynamic multicast delegates — no direct state polling in `Tick()`
 - AI tuning parameters must be designer-editable via `UDataTable` (ADR-0005)
 - AI perception collision via `EHostileCollision::AIPerception` alias (ADR-0007)
-- Noise detection via `UAIPerceptionSystem::MakeNoise()` — locked by ADR-0010
+- Noise detection via `UAISense_Hearing::ReportNoiseEvent()` — locked by ADR-0010
 - Zone queries via `ISceneManagementSubsystem` for zone identity; `IInfectionSpreadSubsystem::GetZoneInfectionLevel()` for infection level
 - No direct Data Layer access (ADR-0008); no cross-zone alien pursuit (game design constraint)
 
@@ -60,8 +60,8 @@ Adopt the **UE5 native AI stack**: Behavior Trees + `UAIPerceptionComponent` + E
 AAlienCharacter : ACharacter
 ├── TObjectPtr<UAIPerceptionComponent> PerceptionComp   ← on Character, not Controller
 │   ├── UAISenseConfig_Sight*   SightConfig   (Range=2000cm, LoseSight=2500cm, FOV=110°)
-│   ├── UAISenseConfig_Hearing* HearingConfig  (Range=1500cm; stimuli from MakeNoise — ADR-0010)
-│   └── UAISenseConfig_Damage*  DamageConfig   (Threshold=5 HP; requires explicit ReportDamageEvent())
+│   ├── UAISenseConfig_Hearing* HearingConfig  (Range=1500cm; stimuli from ReportNoiseEvent — ADR-0010)
+│   └── UAISenseConfig_Damage*  DamageConfig   (Threshold=5 HP; requires explicit UAISense_Damage::ReportDamageEvent())
 ├── TObjectPtr<UNiagaraComponent>  BiomassVFX
 ├── TObjectPtr<UAudioComponent>    AlienAudioComp
 └── TObjectPtr<UAlienAnimInstance> AlienAnimBP
@@ -163,9 +163,9 @@ public:
 // ── Combat damage sense (explicit call required) ──────────────────────────
 // UAISenseConfig_Damage fires ONLY when explicitly called — NOT from ApplyDamage.
 // The combat system damage pipeline MUST call this after applying damage to an alien:
-UAIPerceptionSystem::ReportDamageEvent(
+UAISense_Damage::ReportDamageEvent(
     GetWorld(), DamagedActor, Instigator,
-    DamageLocation, HitDirection, DamageAmount);
+    DamageAmount, DamageLocation, HitLocation, NAME_None);
 
 // ── Combat death notification ─────────────────────────────────────────────
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAlienKilled, AAlienCharacter*, AlienActor);
@@ -284,7 +284,7 @@ Cell size: 30cm. Agent radius: 50cm. Max slope: 45°. Runtime Generation: Dynami
 
 ### Negative
 - BT debugging requires UE editor (PIE) — BT logic cannot be unit-tested in isolation
-- `UAISenseConfig_Damage` does not auto-fire from `ApplyDamage` — combat pipeline must explicitly call `UAIPerceptionSystem::ReportDamageEvent()` at every alien hit site
+- `UAISenseConfig_Damage` does not auto-fire from `ApplyDamage` — combat pipeline must explicitly call `UAISense_Damage::ReportDamageEvent()` at every alien hit site
 - EQS async query management (in-flight query tracking and cancellation) adds implementation complexity in attack BT tasks
 - `UAlienSquadSubsystem` resets on level transition — any mid-game alien state is lost at zone boundary (by design, confirmed in GDD edge cases)
 
